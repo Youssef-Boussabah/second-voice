@@ -21,7 +21,8 @@ Enrollment: POST `/api/people` with explicit `consent_voice`; POST
 `/api/people/{id}/enroll` with 3–10 multipart `clips[]`. Missing consent is 409.
 Mock speaker mode refuses enrollment rather than storing artificial biometrics.
 Responses never expose vectors. Model initialization and inference use a worker
-thread; first speaker use downloads/warms ECAPA, so prewarm before a live demo.
+thread; startup warms ECAPA in a background task without delaying the app. First
+speaker use also lazily initializes it if needed; prewarm before a live demo.
 
 Install core requirements first. ElevenLabs SDK 2.78.0 was inspected and exercised
 using its real async client against a test HTTP transport. For speaker inference,

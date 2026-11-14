@@ -16,15 +16,19 @@ from app.graph.pipeline import on_partner_utterance
 from app.realtime.hub import broadcast
 from app.voice.audio import MAX_AUDIO_BYTES, validate_wav
 from app.voice.stt import transcribe
-from app.voice.speaker import identify, embed_voice, normalized, session_context
+from app.voice.speaker import identify, embed_voice, normalized, session_context, warmup
 from app.voice.tts import speak_stream
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["voice"])
+_warmup_task: asyncio.Task[None] | None = None
 
 
 async def startup() -> None:
     """Speaker warmup is optional and must never delay speech output."""
+    global _warmup_task
+    if not settings.mock_speaker and (_warmup_task is None or _warmup_task.done()):
+        _warmup_task = asyncio.create_task(warmup())
 
 
 @router.post("/tts")

@@ -204,6 +204,7 @@ def test_enroll_vectors_and_no_audio_storage(client, database, monkeypatch):
 @pytest.mark.parametrize("scores,consent,expected", [([.9, .8], True, "voice"),
     ([.9, .89], True, "unknown"), ([.7, .6], True, "unknown"), ([.95], False, "unknown")])
 async def test_speaker_threshold_margin_consent(database, monkeypatch, scores, consent, expected):
+    monkeypatch.setattr(speaker, "_model", object())
     monkeypatch.setattr(settings, "mock_speaker", False)
     monkeypatch.setattr(settings, "speaker_threshold", .8)
     monkeypatch.setattr(speaker, "embed_voice", AsyncMock(return_value=[1.] + [0.] * 191))
@@ -219,6 +220,7 @@ async def test_speaker_threshold_margin_consent(database, monkeypatch, scores, c
 
 @pytest.mark.asyncio
 async def test_sticky_match_scoped_to_session(database, monkeypatch):
+    monkeypatch.setattr(speaker, "_model", object())
     monkeypatch.setattr(settings, "mock_speaker", False)
     monkeypatch.setattr(settings, "speaker_threshold", .8)
     monkeypatch.setattr(speaker, "embed_voice", AsyncMock(return_value=[1.] + [0.] * 191))
@@ -268,3 +270,13 @@ def test_mock_speaker_has_no_fake_enrollment(client, database):
         files=[("clips[]", (f"{i}.wav", wav_bytes(), "audio/wav")) for i in range(3)])
     assert response.status_code == 503
     database.people.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cold_speaker_never_blocks_stt(monkeypatch):
+    monkeypatch.setattr(settings, "mock_speaker", False)
+    monkeypatch.setattr(speaker, "_model", None)
+    embed = AsyncMock(side_effect=AssertionError("must not download in audio request"))
+    monkeypatch.setattr(speaker, "embed_voice", embed)
+    assert (await speaker.identify(settings.demo_user_id, wav_bytes())).method == "unknown"
+    embed.assert_not_awaited()

@@ -26,6 +26,20 @@ _model = None
 _inference_lock = Lock()
 
 
+async def warmup() -> None:
+    """Optional background startup job; missing ML never breaks other voice routes."""
+    def load() -> None:
+        with _inference_lock:
+            _encoder()
+    started = perf_counter()
+    try:
+        await asyncio.to_thread(load)
+    except Exception as exc:
+        log.warning("speaker warmup unavailable error_type=%s", type(exc).__name__)
+    finally:
+        log.info("speaker warmup elapsed_ms=%d", (perf_counter() - started) * 1000)
+
+
 def _encoder():
     global _model
     if _model is None:
@@ -90,6 +104,9 @@ async def identify(user_id: str, wav_bytes: bytes) -> SpeakerMatch:
     """Atlas cosine score and ambiguity margin; fail closed to unknown."""
     if settings.mock_speaker:
         return SpeakerMatch(method=SpeakerMethod.unknown)
+    if _model is None:
+        # DECISION: cold model/download must never hold up the STT thin slice.
+        return SpeakerMatch()
     started = perf_counter()
     try:
         vector = await embed_voice(wav_bytes)

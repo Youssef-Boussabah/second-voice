@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 from app import db
@@ -25,7 +26,7 @@ from app.contracts import (
 )
 from app.embeddings import embed_query
 from app.graph import instant
-from app.guard.enforce import apply_guard, blocked_topics, tag_topics_safety_net
+from app.guard.enforce import apply_guard, blocked_topics, filter_context, tag_topics_safety_net
 from app.llm import complete_json
 from app.memory import retrieval
 from app.realtime import hub
@@ -42,10 +43,14 @@ _FILLERS = [text for text, _topics, _cue in instant.NEUTRAL]
 PERSONA = (
     "You write reply suggestions for Maya Chen, 58, from Toronto, who has ALS and speaks through "
     "a tablet. Her voice: concise, warm, dry humour, never gushing. She calls her grandson Sam "
-    "'bud'. Every suggestion is something Maya would say out loud, in first person, 3 to 14 "
-    "words. Never narrate, never use emojis, never invent facts that are not in the context. "
-    "Ground replies in the provided memories when relevant and cite their ids in memory_ids."
+    "'bud' (only Sam: never use 'bud' with anyone else). Every suggestion is something Maya "
+    "would say out loud to the PARTNER named in the context, in first person, 3 to 14 words. "
+    "Never narrate, never use emojis, never invent facts, names or events that are not in the "
+    "context. Ground replies in the provided memories when relevant and cite their ids in "
+    "memory_ids."
 )
+_BUD = re.compile(r"\bbud(dy)?\b", re.I)
+_NICKNAME_OK = {"family"}
 
 
 # ───────────────────────── public entry ─────────────────────────
@@ -150,10 +155,16 @@ async def announce_unknown_speaker(state: PipelineState) -> None:
 async def retrieve(state: PipelineState, qvec: list[float] | None) -> None:
     t = time.perf_counter()
     utt = state.utterance
-    state.context = await retrieval.get_context(
+    ctx = await retrieval.get_context(
         utt.user_id, state.person.id if state.person else None, utt.text,
         session_id=utt.session_id, qvec=qvec, person=state.person, skip_embed=True)
+    # Privacy on the INPUT side: anything touching a topic blocked for this partner is removed
+    # before the prompt is built, so the model never sees it (the output guard still runs too).
+    state.context, withheld = filter_context(ctx, state.person)
     state.timings_ms["retrieve"] = _ms(t)
+    if withheld:
+        log.info("context: withheld %d sensitive item(s) from the prompt for person=%s",
+                 withheld, state.person.id if state.person else None)
 
 
 async def generate(state: PipelineState, *, regenerate: bool = False) -> None:
@@ -168,13 +179,20 @@ async def generate(state: PipelineState, *, regenerate: bool = False) -> None:
                 if v not in avoid:
                     avoid.append(v)
     prompt = build_prompt(state, avoid)
+    if settings.log_prompts:
+        log.info("LLM prompt for %s:\n%s", state.utterance.id, prompt)
     out = await complete_json(PERSONA, prompt, GeneratedCandidates, model=settings.suggest_model)
     valid_ids = _context_memory_ids(ctx)
     cands: list[Candidate] = []
     seen: set[str] = set()
+    family = _relationship(state.person) in _NICKNAME_OK
     for g in out.candidates[:8]:
         text = g.text.strip().strip('"')
         if not text or text.lower() in seen:
+            continue
+        if not family and _BUD.search(text):
+            # "bud" is Maya's name for her grandson only; never offer it to anyone else
+            log.info("dropped nickname candidate for non-family partner: %r", text)
             continue
         seen.add(text.lower())
         cands.append(Candidate(text=text, topics=tag_topics_safety_net(text, list(g.topics)),
@@ -241,7 +259,7 @@ def build_prompt(state: PipelineState, avoid: list[str]) -> str:
     eps = {m.id: m for m in [*ctx.relevant_episodes, *ctx.recent_episodes]}
     if eps:
         lines.append("PAST CONVERSATIONS WITH THIS PERSON (most relevant first):")
-        lines += [f"- [{m.id}] {m.created_at:%b %d}: {m.text}" for m in list(eps.values())[:5]]
+        lines += [f"- [{m.id}] {_dated(m)}" for m in list(eps.values())[:5]]
     if ctx.open_threads:
         lines.append("OPEN THREADS (unresolved; good to follow up):")
         lines += [f"- ({t.owner}) {t.text}" for t in ctx.open_threads[:4]]
@@ -296,6 +314,20 @@ def _since(utt: Utterance) -> int:
 
 def _context_memory_ids(ctx: RetrievedContext) -> set[str]:
     return {m.id for m in [*ctx.recent_episodes, *ctx.relevant_episodes, *ctx.phrases, *ctx.facts]}
+
+
+_LEADING_DATE = re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}:")
+
+
+def _dated(m) -> str:
+    """'Oct 16: ...' once, even when the stored summary already starts with its date."""
+    return m.text if _LEADING_DATE.match(m.text) else f"{m.created_at:%b %d}: {m.text}"
+
+
+def _relationship(p: PersonOut | None) -> str:
+    if p is None:
+        return "stranger"
+    return p.relationship if isinstance(p.relationship, str) else p.relationship.value
 
 
 def _ms(t: float) -> int:

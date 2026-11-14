@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.contracts import Boundary, Candidate, PersonOut, Topic
+from app.contracts import Boundary, Candidate, Memory, PersonOut, RetrievedContext, Topic
 
 MAX_ALLOWED = 4
 
@@ -141,6 +141,49 @@ def apply_guard(
         else:
             allowed.append(c.model_copy(update={"topics": topics, "blocked": False, "blocked_by": None}))
     return allowed[:MAX_ALLOWED], blocked
+
+
+def text_hits_blocked(text: str, topics: list, blocked: set[str]) -> bool:
+    """True if `text` (LLM/stored topics ∪ keyword safety net) touches any blocked topic."""
+    if not blocked:
+        return False
+    tagged = {_topic_value(t) for t in tag_topics_safety_net(text, list(topics or []))}
+    return bool(tagged & blocked)
+
+
+def filter_context(ctx: RetrievedContext, person: PersonOut | None) -> tuple[RetrievedContext, int]:
+    """Drop every memory, fact, phrase and open thread that touches a topic blocked for this
+    partner BEFORE the context is put into the LLM prompt. Returns (filtered_ctx, n_withheld).
+
+    The output guard (apply_guard) already blocks sensitive *suggestions*; this closes the input
+    side so private details never reach the model at all (no paraphrased leaks, no prompt-only
+    trust). Deterministic and pure. Conversation turns are not filtered: they are what was said
+    in front of this partner (see memory.retrieval.partner_segment for cross-partner isolation).
+    """
+    blocked = set(blocked_topics(person, ctx.boundaries))
+    if not blocked:
+        return ctx, 0
+    withheld: set[str] = set()
+
+    def keep(mems: list[Memory]) -> list[Memory]:
+        out = []
+        for m in mems:
+            if m.id in withheld or text_hits_blocked(m.text, list(m.topics), blocked):
+                withheld.add(m.id)
+            else:
+                out.append(m)
+        return out
+
+    recent, relevant = keep(ctx.recent_episodes), keep(ctx.relevant_episodes)
+    phrases, facts = keep(ctx.phrases), keep(ctx.facts)
+    # an open thread goes if its own text is sensitive OR its episode was withheld
+    dead_threads = {th.id for m in [*ctx.recent_episodes, *ctx.relevant_episodes]
+                    if m.id in withheld for th in m.open_threads}
+    threads = [th for th in ctx.open_threads
+               if th.id not in dead_threads and not text_hits_blocked(th.text, [], blocked)]
+    out = ctx.model_copy(update={"recent_episodes": recent, "relevant_episodes": relevant,
+                                 "open_threads": threads, "phrases": phrases, "facts": facts})
+    return out, len(withheld) + len(ctx.open_threads) - len(threads)
 
 
 def _rel(person: PersonOut | None) -> str:

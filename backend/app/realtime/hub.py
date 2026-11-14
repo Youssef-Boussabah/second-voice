@@ -114,7 +114,8 @@ async def _warm() -> None:
         log.warning("instant-path warmup failed: %s", str(e)[:200])
     if settings.llm_provider == "nebius" and not settings.mock_llm and settings.nebius_api_key:
         try:
-            for m in {settings.nebius_model, settings.nebius_summary_model or settings.nebius_model}:
+            for m in {settings.nebius_model, settings.nebius_summary_model or settings.nebius_model,
+                      *([settings.llm_hedge_model] if settings.llm_hedge_model else [])}:
                 await llm.resolve_nebius_model(m)
         except Exception as e:  # noqa: BLE001
             log.warning("llm warmup failed: %s", str(e)[:200])
@@ -152,6 +153,18 @@ async def _tail(coll_name: str, handler) -> None:
             backoff = min(backoff * 2, 30.0)
 
 
+def boundary_change_is_news(change: dict[str, Any], status: str) -> bool:
+    """Only a NEW rule (insert) or a status flip is worth a toast. A demo reset re-applying the
+    seed (replace) or an unrelated field update must not announce "Learned: ..." again."""
+    op = change.get("operationType")
+    if op == "insert":
+        return status in ("active", "proposed")
+    if op == "update":
+        fields = (change.get("updateDescription") or {}).get("updatedFields") or {}
+        return "status" in fields
+    return False
+
+
 async def _on_boundary(change: dict[str, Any]) -> None:
     doc = change.get("fullDocument")
     if not doc:
@@ -162,6 +175,8 @@ async def _on_boundary(change: dict[str, Any]) -> None:
         log.warning("malformed boundary in change stream %s", doc.get("_id"))
         return
     status = b.status if isinstance(b.status, str) else b.status.value
+    if not boundary_change_is_news(change, status):
+        return
     if status == "active":
         await emit("boundary.activated", None, b.model_dump(mode="json", by_alias=True), all_sessions=True)
     elif status == "proposed":

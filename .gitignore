@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 frontend/.env
 .venv/
 __pycache__/

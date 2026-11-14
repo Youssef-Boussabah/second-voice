@@ -53,6 +53,25 @@ async def health():
         "change_streams": settings.use_change_streams,
         "ws_connections": hub.connection_count(),
     }
+    # What THIS process actually loaded (never secrets: only presence + model ids), so a demo
+    # operator can prove nothing silently fell back to mocks or to another model.
+    from app import llm
+    if settings.llm_provider == "nebius":
+        out["models"] = {
+            "suggest": llm._nebius_resolved.get(settings.nebius_model, settings.nebius_model),
+            "summary": llm._nebius_resolved.get(settings.nebius_summary_model, settings.nebius_summary_model),
+            "verified": settings.nebius_model in llm._nebius_resolved,
+            "hedge": settings.llm_hedge_model or None,
+            "hedge_after_s": settings.llm_hedge_after_s,
+            "hot_path_answers": dict(llm.hedge_stats),
+            "last_hot_model": llm.last_hot_model,
+        }
+    out["embed_model"] = settings.embed_model
+    out["configured"] = {
+        "nebius_key": bool(settings.nebius_api_key), "voyage_key": bool(settings.voyage_api_key),
+        "elevenlabs_key": bool(settings.elevenlabs_api_key),
+        "elevenlabs_voice": bool(settings.elevenlabs_voice_id),
+    }
     return out
 
 

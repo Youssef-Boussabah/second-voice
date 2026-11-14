@@ -129,9 +129,7 @@ async def audio_utterance(
     if not settings.use_change_streams:
         await broadcast(WSMessage(type="utterance.created", session_id=session_id,
                                   data=utt.model_dump(mode="json")))
-    if not speaker.person_id:
-        await broadcast(WSMessage(type="speaker.unknown", session_id=session_id,
-                                  data={"utterance_id": utt.id, "candidates": []}))
+    # speaker.unknown (with the people to choose from) is emitted by the pipeline itself.
     background_tasks.add_task(on_partner_utterance, utt)
     latency["total"] = int((perf_counter() - started) * 1000)
     log.info("audio utterance latency_ms=%s", latency)

@@ -48,7 +48,7 @@ async def retrieve_person_context(user_id: str, person_id: str, relationship: st
     # Atlas is ~600 ms per round trip from the demo tablet: run the three reads concurrently and
     # leave the 1024-d vectors on the server (context display never needs them).
     person_record, memories, active_rules = await asyncio.gather(
-        database[PEOPLE].find_one({"_id": person_id, "user_id": user_id}, {"voiceprints": 0}),
+        database[PEOPLE].find_one({"_id": person_id, "user_id": user_id}, {"voiceprints": 0, "voice_centroid": {"$slice": 1}}),
         database[MEMORIES].find(
             {"user_id": user_id, "status": "active", "person_id": {"$in": [person_id, "global"]}},
             {"embedding": 0},
@@ -62,7 +62,7 @@ async def retrieve_person_context(user_id: str, person_id: str, relationship: st
         person_out = PersonOut(
             id=person_record["_id"], name=person_record["name"],
             relationship=person_record["relationship"], label=person_record.get("label", ""),
-            enrolled=bool(person_record.get("consent", {}).get("voice")), last_seen=person_record.get("last_seen"),
+            enrolled=bool(person_record.get("voice_centroid")), last_seen=person_record.get("last_seen"),
         )
     # DECISION: the tablet header shows this context in front of the partner, so the same
     # deterministic rule that blocks cards also hides memories on blocked topics (LLM topics plus

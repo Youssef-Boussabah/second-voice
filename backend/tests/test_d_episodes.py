@@ -52,7 +52,7 @@ async def test_session_end_writes_one_episode_and_is_idempotent(fake_db, monkeyp
     assert first == second == "mem_ep_ses_sam1" and len(calls) == 1
     eps = [m for m in fake_db["memories"].docs if m.get("session_id") == "ses_sam1"]
     assert len(eps) == 1 and eps[0]["person_id"] == "per_sam" and eps[0]["written_by"] == "lane-d"
-    assert "Partner: We won in overtime" in calls[0] and "[thr_sam_score]" in calls[0]
+    assert "Sam: We won in overtime" in calls[0] and "PARTNER: Sam Chen" in calls[0] and "[thr_sam_score]" in calls[0]
     old = next(m for m in fake_db["memories"].docs if m["_id"] == "mem_ep_sam_nov")
     assert old["open_threads"][0]["status"] == "resolved"
 

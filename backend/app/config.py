@@ -38,8 +38,13 @@ class Settings(BaseSettings):
     )
     # Models that think before answering: we send reasoning_effort=low and a bigger token budget.
     nebius_reasoning_models: str = "zai-org/GLM,openai/gpt-oss,deepseek-ai/DeepSeek-V4-Pro,moonshotai/Kimi"
-    llm_timeout_s: float = 20.0                # hot path (suggestions)
+    # DECISION: 10 s caps a stalled hot-path call; instant suggestions are already on screen and
+    # the client SDK retries once, so the worst case stays well under a conversational pause x2.
+    llm_timeout_s: float = 10.0                # hot path (suggestions)
     llm_summary_timeout_s: float = 90.0        # summaries / non-hot-path calls
+    # Hedged hot path (see llm._hedged). Empty model = off.
+    llm_hedge_model: str = ""
+    llm_hedge_after_s: float = 3.5
     openai_api_key: str = ""
 
     # Embeddings (Voyage AI, a MongoDB company)
@@ -68,7 +73,10 @@ class Settings(BaseSettings):
     mock_tts: bool = False
 
     # App
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Debug only: log the full suggestion prompt (contains private memories; never enable on a
+    # shared machine). Used to verify that blocked context is withheld from the model.
+    log_prompts: bool = False
 
 
 @lru_cache

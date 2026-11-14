@@ -9,9 +9,10 @@ import time
 
 from app.config import settings
 from app.contracts import EpisodeSummary, Event
-from app.db import MEMORIES, SESSIONS, UTTERANCES, db
+from app.db import MEMORIES, PEOPLE, SESSIONS, UTTERANCES, db
 from app.llm import complete_json
 from app.learning.memory import save_episode
+from app.memory.retrieval import partner_segment
 
 log = logging.getLogger(__name__)
 
@@ -46,21 +47,29 @@ async def summarize_session(evt: Event) -> str | None:
         return None
     utterances = await (database[UTTERANCES].find({"session_id": evt.session_id})
                         .sort("created_at", 1).to_list(200))
-    if not utterances:
-        log.info("episode skipped session=%s: no utterances", evt.session_id)
+    # Only the stretch spoken with THIS partner: a session where Maya switched from Dana to Sam
+    # must never file Dana's refill talk under Sam (found live in Atlas, 2026-11-14).
+    utterances = partner_segment(utterances, person_id)
+    if not any((u.get("speaker") or {}).get("kind") == "partner" for u in utterances):
+        log.info("episode skipped session=%s: no partner turns with %s", evt.session_id, person_id)
         return None
+    person = await database[PEOPLE].find_one({"_id": person_id}, {"name": 1, "label": 1, "relationship": 1})
+    first = ((person or {}).get("name") or "Partner").split()[0]
+    role = (person or {}).get("label") or (person or {}).get("relationship") or "conversation partner"
 
     lines = []
     for utterance in utterances:
         kind = (utterance.get("speaker") or {}).get("kind")
-        lines.append(f"{'Maya' if kind == 'user' else 'Partner'}: {utterance.get('text', '').strip()}")
+        lines.append(f"{'Maya' if kind == 'user' else first}: {utterance.get('text', '').strip()}")
     open_threads = {}
     async for episode in database[MEMORIES].find({"user_id": evt.user_id, "person_id": person_id,
                                                   "kind": "episode", "status": "active"}):
         for thread in episode.get("open_threads", []):
             if thread.get("status") == "open":
                 open_threads[thread["id"]] = thread["text"]
-    prompt = "EXISTING OPEN THREADS:\n" + ("\n".join(f"- [{k}] {v}" for k, v in open_threads.items()) or "- none")
+    prompt = (f"PARTNER: {(person or {}).get('name', 'Partner')} ({role}). Refer to them by name, "
+              f"never as 'the partner'. Only state what the transcript says.\n\n")
+    prompt += "EXISTING OPEN THREADS:\n" + ("\n".join(f"- [{k}] {v}" for k, v in open_threads.items()) or "- none")
     prompt += "\n\nTRANSCRIPT:\n" + "\n".join(lines[-80:])
     try:
         summary = await complete_json(SYSTEM, prompt, EpisodeSummary, model=settings.summary_model)

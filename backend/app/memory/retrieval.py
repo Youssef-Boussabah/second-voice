@@ -81,10 +81,36 @@ async def active_boundaries(user_id: str) -> list[Boundary]:
     return _parse(Boundary, docs)
 
 
-async def recent_turns(session_id: str, limit: int = 10) -> list[Utterance]:
+def partner_segment(docs: list[dict[str, Any]], person_id: str | None) -> list[dict[str, Any]]:
+    """Chronological utterance docs → only the trailing stretch spoken with `person_id`.
+
+    Walks back from the newest turn and stops at the first partner turn by someone else, so
+    when Maya switches from Dana to Mike inside one session, Dana's turns (and Maya's replies
+    to Dana) never reach Mike's prompt or Mike's episode summary. An unidentified partner turn
+    (speaker ID unsure, person_id None) does not end the stretch; a turn by a KNOWN different
+    person does. Pure; works on raw docs."""
+    out: list[dict[str, Any]] = []
+    for d in reversed(docs):
+        sp = d.get("speaker") or {}
+        other = sp.get("person_id")
+        if sp.get("kind") == "partner" and other is not None and other != person_id:
+            break
+        out.append(d)
+    out.reverse()
+    # Maya's replies that precede this partner's first turn were said to the previous partner.
+    while out and (out[0].get("speaker") or {}).get("kind") != "partner":
+        out.pop(0)
+    return out
+
+
+async def recent_turns(session_id: str, limit: int = 10, *,
+                       person_id: str | None = None, scoped: bool = False) -> list[Utterance]:
     docs = await (db.db()[db.UTTERANCES].find({"session_id": session_id})
                   .sort("created_at", -1).limit(limit).to_list(limit))
-    return list(reversed(_parse(Utterance, docs)))
+    docs = list(reversed(docs))
+    if scoped:
+        docs = partner_segment(docs, person_id)
+    return _parse(Utterance, docs)
 
 
 # ───────────────────────── Atlas Search ─────────────────────────
@@ -204,7 +230,7 @@ async def get_context(user_id: str, person_id: str | None, utterance_text: str, 
         return _parse(Memory, docs)
 
     async def _turns() -> list[Utterance]:
-        return await recent_turns(session_id) if session_id else []
+        return await recent_turns(session_id, person_id=person_id, scoped=True) if session_id else []
 
     p, relevant, recent, phrases, facts, bnds, turns = await asyncio.gather(
         _person(), _hybrid(), _recent(), _phrases(), _facts(), active_boundaries(user_id), _turns(),

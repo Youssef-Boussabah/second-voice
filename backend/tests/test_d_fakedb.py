@@ -134,7 +134,13 @@ class FakeCollection:
 
     def _apply(self, d: dict, update: dict) -> None:
         for key, value in update.get("$set", {}).items():
-            d[key] = copy.deepcopy(value)
+            target = d
+            *parents, leaf = key.split(".")
+            for part in parents:                      # dotted paths set nested fields, like Mongo
+                target = target.setdefault(part, {})
+            target[leaf] = copy.deepcopy(value)
+        for key in update.get("$unset", {}):
+            d.pop(key, None)
         for key, value in update.get("$inc", {}).items():
             d[key] = d.get(key, 0) + value
 

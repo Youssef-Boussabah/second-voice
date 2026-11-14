@@ -51,7 +51,64 @@ async def complete_json(system: str, user: str, schema: type[T], *, model: str |
         out = mock_response(system, user, schema)
         log.info("llm mock %s %dms", schema.__name__, (time.perf_counter() - t0) * 1000)
         return out
+    if (settings.llm_provider == "nebius" and settings.llm_hedge_model
+            and _nebius_requested(model) == settings.nebius_model):
+        return await _hedged(system, user, schema, temperature, max_tokens)
+    return await _complete(system, user, schema, model, temperature, max_tokens)
 
+
+# ───────────────────────── hedged hot path ─────────────────────────
+# DECISION (measured 2026-11-14 16:10 ET): Qwen3-30B-A3B on Token Factory slowed to 6-7 s per
+# call (18.8 s once, timeout + SDK retry) while MiniMax-M3.1-Flash answered the same prompt in
+# 1.3-1.7 s. The configured model stays primary; if it hasn't answered after LLM_HEDGE_AFTER_S a
+# parallel request goes to LLM_HEDGE_MODEL and the first VALID answer wins. Disabled when
+# LLM_HEDGE_MODEL is empty. Winners are counted so the demo can say exactly which model answered.
+hedge_stats: dict[str, int] = {"primary": 0, "hedge": 0, "failed": 0}
+last_hot_model: str | None = None
+
+
+async def _hedged(system: str, user: str, schema: type[T], temperature: float, max_tokens: int) -> T:
+    global last_hot_model
+    t0 = time.perf_counter()
+    primary = asyncio.create_task(
+        _complete(system, user, schema, settings.nebius_model, temperature, max_tokens), name="llm-primary")
+    labels: dict[asyncio.Task, tuple[str, str]] = {primary: ("primary", settings.nebius_model)}
+    done, _ = await asyncio.wait({primary}, timeout=settings.llm_hedge_after_s)
+    pending: set[asyncio.Task] = {primary}
+    if not done:
+        hedge = asyncio.create_task(
+            _complete(system, user, schema, settings.llm_hedge_model, temperature, max_tokens), name="llm-hedge")
+        labels[hedge] = ("hedge", settings.llm_hedge_model)
+        pending.add(hedge)
+        log.info("llm hedge: %s silent after %.1fs; also asking %s", settings.nebius_model,
+                 settings.llm_hedge_after_s, settings.llm_hedge_model)
+    last_err: BaseException | None = None
+    while pending:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            err = task.exception()
+            if err is None:
+                for other in pending:
+                    other.cancel()
+                kind, mdl = labels[task]
+                hedge_stats[kind] += 1
+                last_hot_model = mdl
+                log.info("llm hot path answered by %s (%s) in %dms", mdl, kind, (time.perf_counter() - t0) * 1000)
+                return task.result()
+            last_err = err
+            log.warning("llm %s failed: %s", labels[task][1], str(err)[:200])
+            if task is primary and len(labels) == 1:   # primary failed fast: hedge immediately
+                hedge = asyncio.create_task(
+                    _complete(system, user, schema, settings.llm_hedge_model, temperature, max_tokens))
+                labels[hedge] = ("hedge", settings.llm_hedge_model)
+                pending.add(hedge)
+    hedge_stats["failed"] += 1
+    raise last_err if isinstance(last_err, Exception) else LLMUnavailable("hot path failed")
+
+
+async def _complete(system: str, user: str, schema: type[T], model: str | None,
+                    temperature: float, max_tokens: int) -> T:
+    t0 = time.perf_counter()
     last_err: Exception | None = None
     prompt = user
     for attempt in range(2):
@@ -59,7 +116,7 @@ async def complete_json(system: str, user: str, schema: type[T], *, model: str |
             if settings.llm_provider == "nebius":
                 requested = _nebius_requested(model)
                 mdl = await resolve_nebius_model(requested)
-                hot = requested == settings.nebius_model
+                hot = requested in (settings.nebius_model, settings.llm_hedge_model)
                 reasoning = _is_reasoning(mdl)
                 raw = await _openai_compat_json(
                     _get_nebius(), mdl, system, prompt, schema, temperature,

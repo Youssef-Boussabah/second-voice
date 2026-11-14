@@ -62,6 +62,7 @@ async def test_dry_run_reports_and_writes_nothing(monkeypatch):
 
 async def test_reset_deletes_only_learned_and_demo_docs_then_restores_seed(monkeypatch):
     database = await _state(monkeypatch)
+    monkeypatch.setattr(demo_seed.settings, "enable_demo_reset", True)   # explicit operator opt-in
     result = await demo_seed.reset_demo(database, dry_run=False, user_id=DEMO)
     assert result["deleted"] == {"memories": 2, "boundaries": 2, "events": 1, "sessions": 1}
     memory_ids = {d["_id"] for d in database["memories"].docs}

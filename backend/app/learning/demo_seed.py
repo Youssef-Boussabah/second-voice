@@ -118,7 +118,15 @@ def reset_filters(user_id: str) -> dict[str, dict[str, Any]]:
     }
 
 
+class ResetDisabled(PermissionError):
+    """Raised when a destructive reset is attempted without ENABLE_DEMO_RESET=true."""
+
+
 async def reset_demo(database, *, dry_run: bool, user_id: str | None = None) -> dict[str, Any]:
+    """dry_run=True only counts (read-only). dry_run=False deletes, and is refused unless the
+    operator explicitly set ENABLE_DEMO_RESET=true (guards every caller: API and seed/load.py)."""
+    if not dry_run and not settings.enable_demo_reset:
+        raise ResetDisabled("demo reset is disabled; set ENABLE_DEMO_RESET=true to allow it")
     started = time.perf_counter()
     user_id = user_id or settings.demo_user_id
     deleted: dict[str, int] = {}

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
 
     # App
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Destructive demo reset (deletes the demo user's learned rules/phrases/episodes and demo
+    # sessions/events). OFF by default. Executing it needs ENABLE_DEMO_RESET=true AND, over HTTP,
+    # an X-Admin-Token header equal to ADMIN_TOKEN (non-empty). Dry runs are always read-only.
+    enable_demo_reset: bool = False
+    admin_token: str = ""
     # Debug only: log the full suggestion prompt (contains private memories; never enable on a
     # shared machine). Used to verify that blocked context is withheld from the model.
     log_prompts: bool = False

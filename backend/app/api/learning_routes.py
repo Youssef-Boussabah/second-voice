@@ -1,12 +1,14 @@
 """Lane D: learning and evaluation read/action routes."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+import hmac
+
+from fastapi import APIRouter, Header, HTTPException, Query
 
 from app import db
 from app.config import settings
 from app.contracts import Boundary, PersonContext, Scoreboard, ConfigMetrics
-from app.learning.demo_seed import reset_demo
+from app.learning.demo_seed import ResetDisabled, reset_demo
 from app.learning.memory import retrieve_person_context
 
 router = APIRouter(prefix="/api", tags=["learning"])
@@ -90,6 +92,21 @@ async def eval_scoreboard():
 
 
 @router.post("/admin/reset-demo")
-async def admin_reset_demo(dry_run: bool = Query(False, description="preview counts without writing")):
-    """Delete the demo user's lane-d learned docs + demo sessions/events, then re-seed (idempotent)."""
-    return await reset_demo(db.db(), dry_run=dry_run)
+async def admin_reset_demo(
+    dry_run: bool = Query(False, description="preview counts without writing"),
+    x_admin_token: str | None = Header(None),
+):
+    """Delete the demo user's learned docs + demo sessions/events, then re-seed.
+
+    Destructive, so it is OFF by default: it needs ENABLE_DEMO_RESET=true on the server AND an
+    X-Admin-Token header matching ADMIN_TOKEN. `?dry_run=true` only counts and is always allowed."""
+    if dry_run:
+        return await reset_demo(db.db(), dry_run=True)
+    if not settings.enable_demo_reset:
+        raise HTTPException(403, "demo reset is disabled on this server (ENABLE_DEMO_RESET is not true)")
+    if not settings.admin_token or not hmac.compare_digest(x_admin_token or "", settings.admin_token):
+        raise HTTPException(403, "missing or invalid X-Admin-Token")
+    try:
+        return await reset_demo(db.db(), dry_run=False)
+    except ResetDisabled as error:
+        raise HTTPException(403, str(error)) from error

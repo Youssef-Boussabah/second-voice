@@ -15,7 +15,7 @@ load_dotenv(ROOT / ".env")
 from pymongo import AsyncMongoClient  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.learning.demo_seed import apply_seed, reset_demo  # noqa: E402
+from app.learning.demo_seed import ResetDisabled, apply_seed, reset_demo  # noqa: E402
 
 
 async def main(dry_run: bool, reset: bool) -> None:
@@ -23,7 +23,10 @@ async def main(dry_run: bool, reset: bool) -> None:
     try:
         database = client[settings.mongodb_db]
         if reset:
-            result = await reset_demo(database, dry_run=dry_run)
+            try:
+                result = await reset_demo(database, dry_run=dry_run)
+            except ResetDisabled as error:
+                raise SystemExit(f"refused: {error}. Nothing was deleted.") from error
             print(f"reset-demo deleted{' (would)' if dry_run else ''}: {result['deleted']}")
             report = result["seed"]
         else:
@@ -39,6 +42,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="report planned changes without writing")
     parser.add_argument("--reset", action="store_true",
-                        help="also delete the demo user's lane-d learned docs + demo sessions/events first")
+                        help="also delete the demo user's lane-d learned docs + demo sessions/events first "
+                             "(destructive: requires ENABLE_DEMO_RESET=true unless --dry-run)")
     arguments = parser.parse_args()
     asyncio.run(main(arguments.dry_run, arguments.reset))

@@ -75,7 +75,7 @@ cd backend
 ..\.venv\Scripts\python.exe scripts\create_indexes.py          # once; wait until Atlas says queryable
 # terminal 1: API
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-# terminal 2: learning worker (exactly ONE per database; a second one refuses to start)
+# terminal 2: learning worker (one active per database; a second v2 worker waits in standby)
 ..\.venv\Scripts\python.exe -m app.learning.worker
 # terminal 3: tablet app
 cd ..\frontend
@@ -86,13 +86,23 @@ npm run dev -- --host 127.0.0.1      # http://127.0.0.1:5173
 Check what the running API actually loaded: `GET http://127.0.0.1:8000/api/health` (mocks, models,
 which model answered, key presence; never key values).
 
-Seed data (3 people, history, phrases, default rules) is loaded by `seed/load.py`;
-`POST /api/admin/reset-demo` deletes the demo user's learned rules/phrases/episodes and demo sessions,
-then re-seeds. It is hidden in the UI unless `VITE_ENABLE_RESET=true`.
+Seed data (3 people, history, phrases, default rules) is loaded by `seed/load.py`.
+
+**Demo reset is destructive and off by default.** `POST /api/admin/reset-demo` (and
+`seed/load.py --reset`) deletes the demo user's learned rules, phrases and episodes plus demo
+sessions and events, then re-seeds. It refuses unless the server has `ENABLE_DEMO_RESET=true`, and
+over HTTP it also needs an `X-Admin-Token` header equal to `ADMIN_TOKEN`. `?dry_run=true` only counts
+what would be deleted and is always allowed. The UI's reset button is hidden unless
+`VITE_ENABLE_RESET=true`; it sends no token, so against a real backend it only works in mock mode.
+
+**Learning worker:** run exactly one per database; extra v2 workers wait in standby. See
+[docs/operations/learning-worker.md](docs/operations/learning-worker.md) for its guarantees
+(at-least-once with idempotent effects), how to inspect stuck events, and how to find and stop an
+older worker (`python scripts/worker_audit.py`, read-only).
 
 ## Tests
 ```powershell
-cd backend;  ..\.venv\Scripts\python.exe -m pytest -q          # 93 tests, mocks, no network
+cd backend;  ..\.venv\Scripts\python.exe -m pytest -q          # unit tests, mocks, no network
 cd frontend; npm run build; npm run smoke                       # TS strict build + mock flow smoke
 # browser e2e of the stage demo against a MOCK dev server at both tablet orientations:
 $env:VITE_USE_MOCKS="true"; $env:VITE_ENABLE_RESET="true"; npx vite --port 5174   # separate terminal

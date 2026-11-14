@@ -1,0 +1,65 @@
+"""Backfill real Voyage vectors only onto lane-d owned seed memories."""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+BACKEND = ROOT / "backend"
+sys.path.insert(0, str(BACKEND))
+
+from app.config import settings
+from app.db import MEMORIES, db
+from app.embeddings import embed
+
+
+def missing_embedding_filter() -> dict:
+    return {"$or": [{"embedding": {"$exists": False}}, {"embedding": None}]}
+
+
+async def main(dry_run: bool) -> None:
+    if not settings.voyage_api_key:
+        raise SystemExit("VOYAGE_API_KEY is required; no Atlas writes were made.")
+    if settings.mock_embed:
+        raise SystemExit("MOCK_EMBED=true is unsafe for Atlas backfill; set MOCK_EMBED=false. No writes were made.")
+    if settings.embed_dim != 1024:
+        raise SystemExit(f"Expected Lane A's 1024-D memories index, configured dimension is {settings.embed_dim}. No writes were made.")
+
+    collection = db()[MEMORIES]
+    query = {"seed_source": "lane-d", **missing_embedding_filter()}
+    count = await collection.count_documents(query)
+    print(f"memories: lane-d missing embeddings={count}; dry_run={dry_run}; model={settings.embed_model}; dimensions={settings.embed_dim}")
+    if dry_run or count == 0:
+        return
+
+    cursor = collection.find(query, {"_id": 1, "text": 1}).sort("_id", 1)
+    batch: list[dict] = []
+    async for record in cursor:
+        batch.append(record)
+        if len(batch) == 32:
+            await write_batch(collection, batch)
+            batch = []
+    if batch:
+        await write_batch(collection, batch)
+
+
+async def write_batch(collection, batch: list[dict]) -> None:
+    vectors = await embed([record["text"] for record in batch], "document")
+    if len(vectors) != len(batch) or any(len(vector) != 1024 for vector in vectors):
+        raise RuntimeError("Voyage returned an unexpected vector count or dimension; refusing writes.")
+    for record, vector in zip(batch, vectors, strict=True):
+        result = await collection.update_one(
+            {"_id": record["_id"], "seed_source": "lane-d", **missing_embedding_filter()},
+            {"$set": {"embedding": vector}},
+        )
+        if result.modified_count:
+            print(f"embedded {record['_id']}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true", help="count eligible lane-d memories without embedding or writing")
+    arguments = parser.parse_args()
+    asyncio.run(main(arguments.dry_run))

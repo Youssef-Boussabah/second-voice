@@ -36,3 +36,16 @@ def test_seed_documents_have_deterministic_ids_and_unconsented_voice_defaults():
         documents = json.loads((ROOT / "seed" / filename).read_text())
         ids = [item["_id"] for item in documents]
         assert len(ids) == len(set(ids))
+
+
+def test_open_thread_ids_are_unique_and_lane_d_phrases_are_scoped():
+    memories = json.loads((ROOT / "seed/memories.json").read_text())
+    thread_ids = [thread["id"] for item in memories for thread in item.get("open_threads", [])]
+    assert len(thread_ids) == len(set(thread_ids)), thread_ids
+    assert all(thread_id.startswith("thr_") for thread_id in thread_ids)
+    # one open blister-pack thread for Dana, one open game thread for Sam
+    open_texts = [t["text"] for item in memories for t in item.get("open_threads", []) if t["status"] == "open"]
+    assert sum("blister pack" in text for text in open_texts) == 1
+    assert sum("saturday game" in text.lower() for text in open_texts) == 1
+    mike_phrase = next(m for m in memories if m["_id"] == "mem_ph_maya_dry")
+    assert mike_phrase["person_id"] == "per_mike"

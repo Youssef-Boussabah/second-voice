@@ -2,10 +2,17 @@
 import { api } from "./api";
 
 let current: HTMLAudioElement | null = null;
+let finishCurrent: (() => void) | null = null;
+// Bumped by every stop/new speak: a TTS response that arrives after the user stopped (or tapped
+// something else) is discarded instead of playing late.
+let generation = 0;
 
 export function stopSpeaking() {
+  generation++;
   current?.pause();
   current = null;
+  finishCurrent?.(); // release the awaiting caller so the card stops "speaking"
+  finishCurrent = null;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }
 
@@ -16,6 +23,7 @@ function browserSpeak(text: string): Promise<void> {
     u.rate = 1;
     u.onend = () => resolve();
     u.onerror = () => resolve();
+    finishCurrent = resolve;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
     // safety: never leave the card pulsing forever
@@ -23,25 +31,31 @@ function browserSpeak(text: string): Promise<void> {
   });
 }
 
+export type Voice = "elevenlabs" | "browser" | "stopped";
+
 /** POST /api/tts → play MP3; falls back to browser speech if the provider is down. */
-export async function speak(text: string): Promise<"elevenlabs" | "browser"> {
+export async function speak(text: string): Promise<Voice> {
   stopSpeaking();
+  const mine = generation;
   const blob = await api.tts(text);
+  if (mine !== generation) return "stopped";
   if (!blob) {
     await browserSpeak(text);
-    return "browser";
+    return mine === generation ? "browser" : "stopped";
   }
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   current = audio;
   try {
     await new Promise<void>((resolve, reject) => {
+      finishCurrent = resolve;
       audio.onended = () => resolve();
       audio.onerror = () => reject(new Error("audio playback failed"));
       audio.play().catch(reject);
     });
-    return "elevenlabs";
+    return mine === generation ? "elevenlabs" : "stopped";
   } catch {
+    if (mine !== generation) return "stopped";
     await browserSpeak(text);
     return "browser";
   } finally {

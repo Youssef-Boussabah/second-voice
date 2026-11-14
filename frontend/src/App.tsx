@@ -7,18 +7,27 @@ import ScoreboardScreen from "./screens/ScoreboardScreen";
 import Toasts from "./components/Toasts";
 import ErrorBoundary from "./components/ErrorBoundary";
 import BoundaryModal from "./components/BoundaryModal";
+import Icon, { Logo, type IconName } from "./components/Icon";
 
-const TABS: { id: Screen; label: string; icon: string }[] = [
-  { id: "talk", label: "Talk", icon: "💬" },
-  { id: "memory", label: "Memory & privacy", icon: "🔒" },
-  { id: "scoreboard", label: "Scoreboard", icon: "📊" },
+const TABS: { id: Screen; label: string; short: string; icon: IconName }[] = [
+  { id: "talk", label: "Talk", short: "Talk", icon: "chat" },
+  { id: "memory", label: "Memory & privacy", short: "Memory", icon: "shield" },
+  { id: "scoreboard", label: "Evaluation", short: "Eval", icon: "chart" },
 ];
+
+const STATUS = {
+  open: { text: "Live", dot: "bg-voice", ring: "ring-voice/25" },
+  idle: { text: "Ready", dot: "bg-line-strong", ring: "ring-transparent" },
+  connecting: { text: "Connecting…", dot: "bg-amber-500 animate-pulse", ring: "ring-amber-300/40" },
+  closed: { text: "Reconnecting…", dot: "bg-danger animate-pulse", ring: "ring-danger/25" },
+} as const;
 
 export default function App() {
   const screen = useStore((s) => s.screen);
   const setScreen = useStore((s) => s.setScreen);
   const init = useStore((s) => s.init);
   const wsStatus = useStore((s) => s.wsStatus);
+  const st = STATUS[wsStatus];
 
   useEffect(() => {
     void init();
@@ -26,44 +35,46 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-2 border-b-2 border-line bg-white/70 px-4 py-2 backdrop-blur">
-        <div className="mr-1 flex shrink-0 items-center gap-2">
-          <span aria-hidden className="grid h-10 w-10 place-items-center rounded-full bg-clay text-xl text-white">◐</span>
-          <span className="hidden text-2xl font-bold tracking-tight lg:inline">Second Voice</span>
+      <header className="z-30 flex shrink-0 items-center gap-3 border-b border-line/80 bg-canvas/80 px-4 py-2.5 backdrop-blur-md sm:px-5">
+        <div className="flex shrink-0 items-center gap-3">
+          <Logo />
+          <div className="hidden leading-tight xl:block">
+            <p className="text-xl font-bold tracking-tight">Second Voice</p>
+            <p className="text-sm text-muted">Maya's conversation co-pilot</p>
+          </div>
         </div>
-        <nav aria-label="Main" className="flex flex-1 gap-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setScreen(t.id)}
-              aria-current={screen === t.id ? "page" : undefined}
-              className={`min-h-16 whitespace-nowrap rounded-2xl px-4 text-lg font-bold transition-colors ${
-                screen === t.id ? "bg-ink text-paper" : "text-ink hover:bg-clay-soft"
-              }`}
-            >
-              <span aria-hidden className="mr-2">{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
+        <nav aria-label="Main" className="mx-auto flex gap-1 rounded-[22px] border border-line bg-surface/80 p-1 shadow-card">
+          {TABS.map((t) => {
+            const on = screen === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setScreen(t.id)}
+                aria-current={on ? "page" : undefined}
+                className={`inline-flex min-h-16 items-center gap-2 whitespace-nowrap rounded-[18px] px-4 text-lg font-bold transition-colors sm:px-5 ${
+                  on ? "bg-ink text-white shadow-card" : "text-muted hover:bg-ink/5 hover:text-ink"
+                }`}
+              >
+                <Icon name={t.icon} size={22} />
+                <span className="hidden md:inline">{t.label}</span>
+                <span className="md:hidden">{t.short}</span>
+              </button>
+            );
+          })}
         </nav>
-        <div className="flex shrink-0 items-center gap-2 text-base">
-          {USE_MOCKS && (
-            <span className="rounded-full bg-lock-soft px-3 py-1 font-bold text-lock" title="VITE_USE_MOCKS=true">Mock</span>
-          )}
-          <span className="flex items-center gap-2 rounded-full bg-white px-3 py-1 text-muted" role="status" aria-live="polite">
-            <span
-              aria-hidden
-              className={`h-3 w-3 rounded-full ${
-                wsStatus === "open" ? "bg-sage" : wsStatus === "idle" ? "bg-line" : wsStatus === "connecting" ? "bg-amber-500" : "bg-red-600"
-              }`}
-            />
-            {wsStatus === "open" ? "Live" : wsStatus === "idle" ? "Ready" : wsStatus === "connecting" ? "Connecting…" : "Reconnecting…"}
+        <div className="flex shrink-0 items-center gap-2">
+          {USE_MOCKS && <span className="rounded-full bg-amber-soft px-3 py-1.5 text-base font-bold text-amber" title="VITE_USE_MOCKS=true">Mock data</span>}
+          <span role="status" aria-live="polite"
+            className={`flex items-center gap-2 rounded-full bg-surface px-3.5 py-2 text-base font-bold text-muted shadow-inset ring-4 ${st.ring}`}>
+            <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${st.dot}`} />
+            <span className="hidden sm:inline">{st.text}</span>
+            <span className="sr-only sm:hidden">{st.text}</span>
           </span>
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      <main className="scroll-soft min-h-0 flex-1 overflow-y-auto">
         <ErrorBoundary key={screen}>
           {screen === "talk" && <TalkScreen />}
           {screen === "memory" && <MemoryScreen />}

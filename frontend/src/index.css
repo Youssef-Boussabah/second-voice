@@ -3,12 +3,33 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-body { font-family: "Atkinson Hyperlegible", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(185, 80, 42, .06), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(15, 118, 110, .06), transparent 60%),
+    #F5F3EE;
+  color: #1A1A1F;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
 * { -webkit-touch-callout: none; }
 input, textarea { -webkit-touch-callout: default; }
 
 /* Visible, thick focus ring for switch/keyboard users */
-:focus-visible { outline: 4px solid #B4532A; outline-offset: 3px; border-radius: 12px; }
+:focus-visible { outline: 4px solid #B9502A; outline-offset: 3px; border-radius: 14px; }
+
+@layer components {
+  .panel { @apply rounded-4xl border border-line bg-surface shadow-card; }
+  .eyebrow { @apply text-sm font-bold uppercase tracking-[0.08em] text-muted; }
+  .skeleton {
+    background: linear-gradient(90deg, #EFEBE4 0px, #F8F6F2 160px, #EFEBE4 320px);
+    background-size: 800px 100%;
+    @apply animate-shimmer;
+  }
+  .scroll-soft { scrollbar-width: thin; scrollbar-color: #D3CCBF transparent; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

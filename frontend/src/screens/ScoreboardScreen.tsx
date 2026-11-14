@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ConfigMetrics, Scoreboard } from "../contracts";
 import { api } from "../lib/api";
-import { Button } from "../components/ui";
+import { IconButton } from "../components/ui";
+import Icon from "../components/Icon";
 
 type Key = keyof ConfigMetrics;
 const ROWS: { key: Key; label: string; better: "up" | "down"; fmt: (v: number) => string }[] = [
@@ -22,54 +23,66 @@ export default function ScoreboardScreen() {
     api.scoreboard().then(setSb).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(load, [load]);
+  // Honesty: synthetic runs must never read as real AI measurements.
+  const mock = !!sb && /^MOCK/i.test(sb.notes);
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold">Cold vs warm memory</h1>
-        <Button tone="ghost" onClick={load} aria-label="Refresh scoreboard">↻ Refresh</Button>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2.5 text-3xl font-bold tracking-tight"><Icon name="chart" size={28} /> Cold vs warm memory</h1>
+          <p className="mt-1 text-lg text-muted">The same scripted conversations replayed with memory off (cold) and on (warm).</p>
+        </div>
+        <IconButton icon="refresh" label="Refresh evaluation" onClick={load} />
       </div>
-      {err && <p className="rounded-2xl bg-red-50 p-4 text-xl text-red-800">Scoreboard unavailable: {err}</p>}
-      {!sb && !err && <p className="text-xl text-muted">Loading…</p>}
-      {sb && (!sb.cold || !sb.warm) && <p className="rounded-2xl bg-white p-4 text-xl text-muted">No eval runs yet. Run the eval to fill this in.</p>}
+      {mock && (
+        <div role="note" className="flex items-start gap-4 rounded-4xl border border-amber-line bg-amber-soft p-5">
+          <Icon name="alert" size={28} className="mt-0.5 text-amber" />
+          <div>
+            <p className="text-xl font-bold">MOCK run: not a real AI measurement</p>
+            <p className="mt-1 text-lg text-ink/80">These numbers come from the test harness with a canned LLM and random (non-semantic) embeddings. They only show the evaluation pipeline works. No real cold-vs-warm result has been recorded yet.</p>
+          </div>
+        </div>
+      )}
+      {err && <p role="alert" className="rounded-3xl bg-danger-soft p-4 text-xl text-danger">Evaluation unavailable: {err}</p>}
+      {!sb && !err && <div className="skeleton h-80 rounded-4xl" />}
+      {sb && (!sb.cold || !sb.warm) && <p className="panel p-5 text-xl text-muted">No evaluation runs yet.</p>}
       {sb?.cold && sb.warm && (
-        <table className="w-full border-separate border-spacing-y-2 text-left">
-          <caption className="sr-only">Evaluation metrics, cold start versus warm memory</caption>
-          <thead>
-            <tr className="text-lg text-muted">
-              <th scope="col" className="px-4">Metric</th>
-              <th scope="col" className="px-4 text-right">Cold (no memory)</th>
-              <th scope="col" className="px-4 text-right">Warm (with memory)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ROWS.map((r) => {
-              const c = sb.cold![r.key];
-              const w = sb.warm![r.key];
-              const improved = r.better === "up" ? w > c : w < c;
-              const same = w === c;
-              return (
-                <tr key={r.key} className="bg-white text-2xl">
-                  <th scope="row" className="rounded-l-2xl px-4 py-4 text-xl font-bold">{r.label}</th>
-                  <td className="px-4 py-4 text-right tabular-nums text-muted">{r.fmt(c)}</td>
-                  <td className="rounded-r-2xl px-4 py-4 text-right text-3xl font-bold tabular-nums">
-                    {r.fmt(w)}{" "}
-                    {!same && (
-                      <span className={improved ? "text-sage" : "text-red-700"} aria-label={improved ? "better" : "worse"}>
-                        {w > c ? "▲" : "▼"}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className={`panel overflow-hidden ${mock ? "opacity-75" : ""}`}>
+          <table className="w-full text-left">
+            <caption className="sr-only">Evaluation metrics, cold start versus warm memory{mock ? " (MOCK run)" : ""}</caption>
+            <thead>
+              <tr className="border-b border-line text-base text-muted">
+                <th scope="col" className="px-5 py-4 font-bold">Metric</th>
+                <th scope="col" className="px-5 py-4 text-right font-bold">Cold</th>
+                <th scope="col" className="px-5 py-4 text-right font-bold">Warm</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.map((r) => {
+                const c = sb.cold![r.key];
+                const w = sb.warm![r.key];
+                const improved = r.better === "up" ? w > c : w < c;
+                return (
+                  <tr key={r.key} className="border-b border-line/70 last:border-0">
+                    <th scope="row" className="px-5 py-4 text-lg font-bold">{r.label}</th>
+                    <td className="px-5 py-4 text-right text-xl tabular-nums text-muted">{r.fmt(c)}</td>
+                    <td className="px-5 py-4 text-right text-2xl font-bold tabular-nums">
+                      {r.fmt(w)}{" "}
+                      {w !== c && (
+                        <span className={improved ? "text-voice" : "text-danger"} aria-label={improved ? "better" : "worse"}>{w > c ? "▲" : "▼"}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
       {sb && (
-        <p className="text-lg text-muted">
-          {sb.notes || "Same scripted conversations replayed with memory off (cold) and on (warm)."}
-          {sb.cold && ` · ${sb.cold.runs} runs`} · updated {new Date(sb.updated_at).toLocaleString()}
+        <p className="text-base text-muted">
+          {sb.notes}{sb.cold && ` · ${sb.cold.runs} run${sb.cold.runs === 1 ? "" : "s"}`} · updated {new Date(sb.updated_at).toLocaleString()}
         </p>
       )}
     </div>

@@ -184,3 +184,21 @@ async def test_second_worker_is_refused_a_lease():
     assert await worker.acquire_lease(lease_db, owner="pc:1") is True
     assert await worker.acquire_lease(lease_db, owner="pc:2") is False   # second worker refused
     assert await worker.acquire_lease(lease_db, owner="pc:1") is True    # heartbeat renews
+
+
+async def test_same_rejection_never_creates_two_rules(monkeypatch):
+    """Live 2026-11-14: two workers processed one rejection and wrote two identical rules."""
+    from app.contracts import Event, EventType
+    from app.learning import boundaries as boundaries_mod
+    from test_d_fakedb import FakeDB
+    database = FakeDB()
+    monkeypatch.setattr(boundaries_mod, "db", lambda: database)
+    evt = Event(id="evt_f657f7aaee40", user_id=USER, type=EventType.suggestion_rejected, person_id="per_mike",
+                relationship="acquaintance", text="Still surviving the medication grind.",
+                topics=["medication"], reason="too_personal")
+    first = await boundaries_mod.propose_and_validate(evt)
+    # simulate a second worker that has not seen the first rule yet (status not active)
+    database["boundaries"].docs[0]["status"] = "proposed"
+    second = await boundaries_mod.propose_and_validate(evt)
+    assert first is not None and first.id == "bnd_f657f7aaee40" and second is None
+    assert len(database["boundaries"].docs) == 1

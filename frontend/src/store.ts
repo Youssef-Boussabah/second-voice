@@ -31,6 +31,7 @@ interface State {
   people: PersonOut[];
   personId: string | null;
   context: PersonContext | null;
+  contextFailed: boolean;
   session: Session | null;
   wsStatus: WsStatus;
   turns: Utterance[];
@@ -46,9 +47,10 @@ interface State {
   setScreen(s: Screen): void;
   init(): Promise<void>;
   choosePerson(id: string): Promise<void>;
-  sendIncoming(text: string): Promise<void>;
+  sendIncoming(text: string): Promise<boolean>;
   assignUnknown(personId: string): Promise<void>;
   speakCandidate(c: Candidate, editedText?: string): Promise<void>;
+  stopSpeech(): void;
   speakTyped(text: string): Promise<void>;
   rejectCandidate(c: Candidate, reason: RejectReason): Promise<void>;
   resolveProposed(confirm: boolean): Promise<void>;
@@ -60,9 +62,18 @@ interface State {
 }
 
 let ws: WsHandle | null = null;
+// candidate id → the suggestion set it came from. The instant set can be replaced by the final
+// set between render and tap; select/reject must target the set the tapped card belongs to.
+const setOfCandidate = new Map<string, string>();
+// boundary ids already announced (REST confirm + WS status flip must not toast twice)
+const announced = new Set<string>();
 let lingering: WsHandle | null = null; // ended session socket, kept open for the memory.updated(episode) event
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errMsg = (e: unknown) => {
+  const m = e instanceof Error ? e.message : String(e);
+  // fetch() rejects with a TypeError when the server is unreachable
+  return /failed to fetch|networkerror|load failed/i.test(m) ? "Can't reach the Second Voice server. It may be restarting; try again in a moment." : m;
+};
 
 export const useStore = create<State>((set, get) => {
   const fail = (where: string) => (e: unknown) => {
@@ -71,17 +82,17 @@ export const useStore = create<State>((set, get) => {
   };
 
   // Failure plan: if ElevenLabs is down the narrator must know it was the browser voice.
-  const noteVoice = (v: "elevenlabs" | "browser") => {
+  const noteVoice = (v: "elevenlabs" | "browser" | "stopped") => {
     if (v === "browser" && !USE_MOCKS) get().pushToast({ tone: "info", title: "Spoken with the browser voice", body: "Cloned voice unavailable right now." });
   };
 
   const loadContext = async (personId: string) => {
     try {
       const ctx = await api.personContext(personId);
-      if (get().personId === personId) set({ context: ctx });
+      if (get().personId === personId) set({ context: ctx, contextFailed: false });
     } catch (e) {
       console.warn("[SV] context unavailable", e);
-      set({ context: null });
+      if (get().personId === personId) set({ context: null, contextFailed: true });
     }
   };
 
@@ -106,9 +117,12 @@ export const useStore = create<State>((set, get) => {
     const pid = get().personId;
     if (incoming.person_id && pid && incoming.person_id !== pid) return;
     const cur = get().suggestions;
+    // the user already answered this utterance (tapped an instant card): keep that state
+    if (cur && cur._id !== incoming._id && cur.utterance_id === incoming.utterance_id && cur.status === "chosen") return;
     // final replaces instant; never let an older/instant set overwrite a newer final one
     if (cur && cur._id === incoming._id && cur.stage === "final" && incoming.stage === "instant") return;
     if (cur && cur._id !== incoming._id && cur.created_at > incoming.created_at) return;
+    for (const c of [...incoming.candidates, ...incoming.blocked]) setOfCandidate.set(c.id, incoming._id);
     set({ suggestions: incoming });
     const known = new Set(get().boundaries.map((b) => b._id));
     if (incoming.blocked.some((c) => c.blocked_by && !known.has(c.blocked_by))) void get().refreshBoundaries();
@@ -119,6 +133,22 @@ export const useStore = create<State>((set, get) => {
 
   const upsertBoundary = (b: Boundary) =>
     set((s) => ({ boundaries: [...s.boundaries.filter((x) => x._id !== b._id), b] }));
+
+  // A rule that applies to the person on screen takes effect on the visible cards immediately
+  // (the server guard enforces it on every later round; this only mirrors it for the UI).
+  const hideNowBlocked = (b: Boundary) => {
+    const cur = get().suggestions;
+    const p = get().people.find((x) => x.id === get().personId);
+    if (!cur || !p || b.status !== "active" || b.action !== "block") return;
+    const applies = b.scope.type === "global" || (b.scope.type === "relationship" && b.scope.value === p.relationship)
+      || (b.scope.type === "person" && b.scope.value === p.id);
+    if (!applies) return;
+    const hit = (c: Candidate) => c.topics.some((t) => b.topics.includes(t));
+    const moved = cur.candidates.filter(hit);
+    if (!moved.length) return;
+    set({ suggestions: { ...cur, candidates: cur.candidates.filter((c) => !hit(c)),
+      blocked: [...cur.blocked, ...moved.map((c) => ({ ...c, blocked: true, blocked_by: b._id }))] } });
+  };
 
   const handleWs = (m: WSMessage) => {
     const sid = get().session?._id;
@@ -136,8 +166,17 @@ export const useStore = create<State>((set, get) => {
       case "boundary.activated": {
         const b = m.data;
         upsertBoundary(b);
+        // dedupe by id AND by meaning: two workers (or a re-delivery) may write the same rule twice
+        const sig = ruleSignature(b);
+        hideNowBlocked(b);
+        // the header/threads for the person on screen must drop what the new rule covers
+        const pid = get().personId;
+        if (pid) void loadContext(pid);
+        if (announced.has(b._id) || announced.has(sig)) break;
+        announced.add(b._id);
+        announced.add(sig);
         logPrivacy("activated", b);
-        get().pushToast({ tone: "learned", title: learnedTitle(b), body: learnedBody(b) });
+        get().pushToast({ tone: "learned", title: learnedTitle(b, get().people), body: learnedBody(b) });
         break;
       }
       case "boundary.proposed":
@@ -166,6 +205,7 @@ export const useStore = create<State>((set, get) => {
     people: [],
     personId: null,
     context: null,
+    contextFailed: false,
     session: null,
     wsStatus: "idle",
     turns: [],
@@ -191,21 +231,27 @@ export const useStore = create<State>((set, get) => {
 
     async choosePerson(id) {
       if (get().personId === id) return;
-      set({ personId: id, context: null, suggestions: null, unknownUtteranceId: null });
+      // One session per partner: the previous chat is ended (and summarized for THAT person)
+      // so Dana's conversation can never become part of Mike's context or memory.
+      const hadChat = !!get().session && get().turns.length > 0;
+      if (hadChat) await get().endConversation();
+      set({ personId: id, context: null, contextFailed: false, suggestions: null, unknownUtteranceId: null });
       void loadContext(id);
     },
 
     async sendIncoming(text) {
       const clean = text.trim();
-      if (!clean) return;
+      if (!clean) return false;
       set({ busy: true });
       try {
         const s = await ensureSession();
         const out = await api.postText({ session_id: s._id, text: clean, person_id: get().personId });
         // WS also delivers it; dedupe by id in handleWs
         set((st) => (st.turns.some((t) => t._id === out.utterance._id) ? st : { turns: [...st.turns, out.utterance].slice(-12) }));
+        return true;
       } catch (e) {
         fail("send what they said")(e);
+        return false;
       } finally {
         set({ busy: false });
       }
@@ -213,8 +259,9 @@ export const useStore = create<State>((set, get) => {
 
     async assignUnknown(personId) {
       const uid = get().unknownUtteranceId;
-      set({ unknownUtteranceId: null });
-      await get().choosePerson(personId);
+      // same conversation, the speaker was just unidentified: do not end the session
+      set({ unknownUtteranceId: null, personId, context: null });
+      void loadContext(personId);
       if (uid) await api.assignSpeaker(uid, { person_id: personId }).catch(fail("assign speaker"));
     },
 
@@ -225,7 +272,7 @@ export const useStore = create<State>((set, get) => {
       set({ speakingId: c.id });
       try {
         const edited = editedText && editedText.trim() !== c.text ? editedText.trim() : null;
-        const out = await api.select(set_._id, { candidate_id: c.id, edited_text: edited, event_id: newId("evt") });
+        const out = await api.select(setOfCandidate.get(c.id) ?? set_._id, { candidate_id: c.id, edited_text: edited, event_id: newId("evt") });
         set((st) => ({
           suggestions: st.suggestions ? { ...st.suggestions, status: "chosen", chosen_candidate_id: c.id } : null,
           turns: st.turns.some((t) => t._id === out.utterance._id) ? st.turns : [...st.turns, out.utterance].slice(-12),
@@ -236,6 +283,10 @@ export const useStore = create<State>((set, get) => {
       } finally {
         set({ speakingId: null });
       }
+    },
+
+    stopSpeech() {
+      stopSpeaking();
     },
 
     async speakTyped(text) {
@@ -262,7 +313,7 @@ export const useStore = create<State>((set, get) => {
         suggestions: { ...set_, candidates: set_.candidates.filter((x) => x.id !== c.id) },
       });
       try {
-        await api.reject(set_._id, { candidate_id: c.id, reason, event_id: newId("evt") });
+        await api.reject(setOfCandidate.get(c.id) ?? set_._id, { candidate_id: c.id, reason, event_id: newId("evt") });
         if (reason !== "too_personal") get().pushToast({ tone: "info", title: "Thanks, noted" });
         else {
           // the learned-rule toast arrives over WS; if it doesn't, still acknowledge the tap
@@ -283,8 +334,10 @@ export const useStore = create<State>((set, get) => {
       try {
         const out = confirm ? await api.confirmBoundary(b._id) : await api.dismissBoundary(b._id);
         upsertBoundary(out);
+        announced.add(out._id);
+        announced.add(ruleSignature(out));
         logPrivacy(confirm ? "confirmed" : "dismissed", out);
-        get().pushToast(confirm ? { tone: "learned", title: learnedTitle(out) } : { tone: "info", title: "OK, rule not added" });
+        get().pushToast(confirm ? { tone: "learned", title: learnedTitle(out, get().people) } : { tone: "info", title: "OK, rule not added" });
       } catch (e) {
         fail("update that rule")(e);
       }
@@ -355,6 +408,11 @@ export function scopeLabel(b: Boundary, people: PersonOut[] = []): string {
   const p = people.find((x) => x.id === b.scope.value);
   return p ? p.name : "one person";
 }
+
+const ruleSignature = (b: Boundary) => `${b.scope.type}:${b.scope.value ?? ""}:${[...b.topics].sort().join(",")}`;
+
+/** Mark a rule as already announced (e.g. confirmed from the Privacy screen). */
+export const markAnnounced = (id: string) => announced.add(id);
 
 export const learnedTitle = (b: Boundary, people?: PersonOut[]) =>
   `Learned: keep ${listJoin(b.topics.map(topicLabel))} private with ${scopeLabel(b, people)}.`;

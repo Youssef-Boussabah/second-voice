@@ -1,6 +1,8 @@
 """Persist and validate learned privacy boundaries."""
 from datetime import datetime, timezone
 
+from pymongo.errors import DuplicateKeyError
+
 from app.contracts import (
     SENSITIVE_TOPICS,
     Boundary,
@@ -8,7 +10,6 @@ from app.contracts import (
     BoundaryScope,
     BoundaryValidation,
     Event,
-    new_id,
 )
 from app.db import BOUNDARIES, EVENTS, db
 from app.learning.demo_seed import LEARNED_TAG
@@ -67,7 +68,9 @@ async def propose_and_validate(evt: Event) -> Boundary | None:
     status = "active" if not chosen_conflicts else "proposed"
     now = datetime.now(timezone.utc)
     boundary = Boundary(
-        id=new_id("bnd"), user_id=evt.user_id, scope=scope, topics=topics,
+        # Deterministic per triggering event: a re-delivered or double-processed rejection can
+        # never create a second copy of the same learned rule (seen live 2026-11-14).
+        id=learned_boundary_id(evt.id), user_id=evt.user_id, scope=scope, topics=topics,
         status=status, origin="learned",
         evidence=BoundaryEvidence(trigger_event_id=evt.id, rejected_text=evt.text, person_id=evt.person_id),
         validation=BoundaryValidation(
@@ -80,8 +83,15 @@ async def propose_and_validate(evt: Event) -> Boundary | None:
         created_at=now,
         activated_at=now if status == "active" else None,
     )
-    await database[BOUNDARIES].insert_one(boundary.to_mongo() | LEARNED_TAG)
+    try:
+        await database[BOUNDARIES].insert_one(boundary.to_mongo() | LEARNED_TAG)
+    except DuplicateKeyError:
+        return None
     return boundary
+
+
+def learned_boundary_id(event_id: str) -> str:
+    return "bnd_" + event_id.split("_", 1)[-1]
 
 
 async def get_active_boundaries(user_id: str, relationship: str, person_id: str | None) -> list[Boundary]:

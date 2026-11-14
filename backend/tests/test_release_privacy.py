@@ -202,3 +202,14 @@ async def test_same_rejection_never_creates_two_rules(monkeypatch):
     second = await boundaries_mod.propose_and_validate(evt)
     assert first is not None and first.id == "bnd_f657f7aaee40" and second is None
     assert len(database["boundaries"].docs) == 1
+
+
+def test_partner_and_typed_text_is_bounded():
+    from fastapi import HTTPException
+
+    from app.api.core_routes import MAX_TEXT, _checked_text
+    assert _checked_text("  hi  ") == "hi"
+    for bad in ("   ", "x" * (MAX_TEXT + 1)):
+        with pytest.raises(HTTPException) as err:
+            _checked_text(bad)
+        assert err.value.status_code == 400

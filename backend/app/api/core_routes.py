@@ -133,6 +133,18 @@ async def _session_partner(session: Session) -> Optional[str]:
     return session.person_ids[0] if session.person_ids else None
 
 
+MAX_TEXT = 2000   # one conversational turn; also bounds the prompt and the TTS request
+
+
+def _checked_text(raw: str) -> str:
+    text = raw.strip()
+    if not text:
+        raise HTTPException(400, "text is empty")
+    if len(text) > MAX_TEXT:
+        raise HTTPException(400, f"text is too long (max {MAX_TEXT} characters)")
+    return text
+
+
 def _user_utt_id(event_id: str) -> str:
     """Deterministic user-utterance id per event, so retried selects are idempotent."""
     return "utt_" + event_id.split("_", 1)[-1]
@@ -191,9 +203,7 @@ async def latest_set(session_id: str):
 @router.post("/utterances/text", response_model=UtteranceOut)
 async def text_utterance(body: TextUtteranceIn):
     t = time.perf_counter()
-    text = body.text.strip()
-    if not text:
-        raise HTTPException(400, "text is empty")
+    text = _checked_text(body.text)
     session = await _get_session(body.session_id)
     if body.person_id:
         if await retrieval.load_person(body.person_id) is None:
@@ -249,7 +259,7 @@ async def select_suggestion(set_id: str, body: SelectIn):
     if cand is None:
         raise HTTPException(404, f"candidate {body.candidate_id} not in set {set_id}")
     session = await _get_session(s.session_id)
-    edited = (body.edited_text or "").strip()
+    edited = _checked_text(body.edited_text) if (body.edited_text or "").strip() else ""
     is_edit = bool(edited) and edited != cand.text
     text = edited if is_edit else cand.text
     topics = tag_topics_safety_net(text, [] if is_edit else list(cand.topics))
@@ -289,9 +299,7 @@ async def reject_suggestion(set_id: str, body: RejectIn):
 
 @router.post("/replies/typed", response_model=SelectOut)
 async def typed_reply(body: TypedReplyIn):
-    text = body.text.strip()
-    if not text:
-        raise HTTPException(400, "text is empty")
+    text = _checked_text(body.text)
     session = await _get_session(body.session_id)
     pid = await _session_partner(session)
     person = await retrieval.load_person(pid)

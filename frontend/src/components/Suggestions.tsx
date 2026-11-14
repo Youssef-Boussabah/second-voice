@@ -36,6 +36,7 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
   const stop = useStore((s) => s.stopSpeech);
   const timer = useRef<number>();
   const longPressed = useRef(false);
+  const startedAt = useRef(0);
 
   const speaking = speakingId === c.id;
   const otherSpeaking = !!speakingId && !speaking;
@@ -69,7 +70,9 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
         onContextMenu={(e) => e.preventDefault()}
         onClick={() => {
           if (longPressed.current) return;
-          if (speaking) return stop();
+          // an accidental double-tap (tremor) must not cut the user's own speech
+          if (speaking) return Date.now() - startedAt.current > 800 ? stop() : undefined;
+          startedAt.current = Date.now();
           void speakCandidate(c);
         }}
         aria-label={speaking ? `Stop speaking: ${c.text}` : `Say: ${c.text}`}

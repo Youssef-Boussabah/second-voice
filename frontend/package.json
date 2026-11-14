@@ -1,0 +1,29 @@
+{
+  "name": "second-voice-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.smoke/smoke.mjs --log-level=warning && node node_modules/.smoke/smoke.mjs",
+    "e2e": "mkdir -p node_modules/.e2e && node scripts/e2e.mjs 1024x768 node_modules/.e2e && node scripts/e2e.mjs 768x1024 node_modules/.e2e"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "playwright-core": "^1.48.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

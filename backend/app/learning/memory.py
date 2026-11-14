@@ -1,6 +1,8 @@
 """Relationship-scoped episode writes and context reads for Lane D."""
 from datetime import datetime, timezone
 
+from pymongo.errors import DuplicateKeyError
+
 from app.contracts import EpisodeSummary, Memory, OpenThread, RetrievedContext, new_id
 from app.db import MEMORIES, PEOPLE, db
 from app.embeddings import embed
@@ -8,18 +10,26 @@ from app.learning.boundaries import get_active_boundaries
 from app.learning.demo_seed import LEARNED_TAG
 
 
-async def save_episode(user_id: str, person_id: str, session_id: str, summary: EpisodeSummary) -> str:
+async def save_episode(user_id: str, person_id: str, session_id: str, summary: EpisodeSummary,
+                       memory_id: str | None = None) -> str:
+    """Insert the episode, then mark resolved threads. A duplicate memory_id is a no-op."""
     now = datetime.now(timezone.utc)
-    await db()[MEMORIES].update_many(
-        {"user_id": user_id, "person_id": person_id, "kind": "episode", "status": "active"},
-        {"$pull": {"open_threads": {"id": {"$in": summary.threads_resolved_ids}}}},
-    ) if summary.threads_resolved_ids else None
     memory = Memory(
-        id=new_id("mem"), user_id=user_id, person_id=person_id, kind="episode",
+        id=memory_id or new_id("mem"), user_id=user_id, person_id=person_id, kind="episode",
         text=summary.summary, topics=summary.topics, open_threads=summary.open_threads_new,
         session_id=session_id, embedding=(await embed([summary.summary], "document"))[0], created_at=now,
     )
-    await db()[MEMORIES].insert_one(memory.to_mongo() | LEARNED_TAG)
+    try:
+        await db()[MEMORIES].insert_one(memory.to_mongo() | LEARNED_TAG)
+    except DuplicateKeyError:
+        return memory.id
+    resolved = set(summary.threads_resolved_ids)
+    if resolved:
+        async for episode in db()[MEMORIES].find({"user_id": user_id, "person_id": person_id, "kind": "episode",
+                                                  "open_threads.id": {"$in": sorted(resolved)}}):
+            threads = [thread | {"status": "resolved"} if thread.get("id") in resolved else thread
+                       for thread in episode.get("open_threads", [])]
+            await db()[MEMORIES].update_one({"_id": episode["_id"]}, {"$set": {"open_threads": threads}})
     return memory.id
 
 

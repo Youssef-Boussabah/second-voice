@@ -8,6 +8,9 @@ from typing import Any
 def _get(doc: dict, path: str) -> Any:
     value: Any = doc
     for part in path.split("."):
+        if isinstance(value, list):  # Mongo array traversal: "open_threads.id"
+            value = [item[part] for item in value if isinstance(item, dict) and part in item]
+            continue
         if not isinstance(value, dict) or part not in value:
             return _MISSING
         value = value[part]

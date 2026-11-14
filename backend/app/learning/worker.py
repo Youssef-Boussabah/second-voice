@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.contracts import Event
 from app.db import EVENTS, WORKER_STATE, db
 from app.learning.boundaries import propose_and_validate
+from app.learning.episodes import summarize_session
 from app.learning.phrasebook import learn_phrase
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -28,6 +29,8 @@ async def main() -> None:
                     await learn_phrase(event)
                 elif event.type == "suggestion_rejected" and event.reason == "too_personal":
                     await propose_and_validate(event)
+                elif event.type == "session_ended":
+                    await summarize_session(event)
                 await database[WORKER_STATE].update_one(
                     {"_id": "learning_worker"},
                     {"$set": {"resume_token": change["_id"], "updated_at": datetime.now(timezone.utc)}},

@@ -2,21 +2,29 @@
 
     await complete_json(system, user, Schema) -> Schema instance
 
-Anthropic (default) uses structured outputs (`messages.parse(output_format=Schema)`), with a
-plain-JSON fallback. OpenAI uses `response_format=json_object`. Validation errors retry once.
+Providers (settings.llm_provider):
+- nebius (default): Nebius Token Factory through the OpenAI-compatible client. The configured
+  model is checked against GET /v1/models on first use; if it isn't listed, the first available
+  entry of NEBIUS_FALLBACK_MODELS is used (and logged). JSON mode (`response_format=json_object`)
+  is used when the model accepts it, otherwise prompt-only JSON + extraction.
+- anthropic: structured outputs (`messages.parse(output_format=Schema)`), plain-JSON fallback.
+- openai: `response_format=json_object`.
+Every path validates with Pydantic and retries once on a validation error.
 MOCK_LLM returns deterministic, persona-aware canned output so the demo works offline.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
+from app.contracts import Topic
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +32,11 @@ T = TypeVar("T", bound=BaseModel)
 
 _anthropic_client = None
 _openai_client = None
+_nebius_client = None
+_nebius_models: list[str] | None = None          # ids from /v1/models (cached)
+_nebius_resolved: dict[str, str] = {}             # requested id -> id actually used
+_json_mode_ok: dict[str, bool] = {}               # model id -> response_format accepted?
+_resolve_lock: asyncio.Lock | None = None
 
 
 class LLMUnavailable(RuntimeError):
@@ -43,9 +56,16 @@ async def complete_json(system: str, user: str, schema: type[T], *, model: str |
     prompt = user
     for attempt in range(2):
         try:
-            if settings.llm_provider == "openai":
-                raw = await _openai_json(system, prompt, schema, model, temperature, max_tokens)
-                out = schema.model_validate_json(_extract_json(raw))
+            if settings.llm_provider == "nebius":
+                mdl = await resolve_nebius_model(_nebius_requested(model))
+                raw = await _openai_compat_json(_get_nebius(), mdl, system, prompt, schema,
+                                                temperature, max_tokens)
+                out = _validate(schema, raw)
+            elif settings.llm_provider == "openai":
+                mdl = model if model and model.startswith(("gpt", "o")) else settings.openai_suggest_model
+                raw = await _openai_compat_json(_get_openai(), mdl, system, prompt, schema,
+                                                temperature, max_tokens)
+                out = _validate(schema, raw)
             else:
                 out = await _anthropic_json(system, prompt, schema, model, max_tokens)
             log.info("llm %s %s %dms (attempt %d)", settings.llm_provider, schema.__name__,
@@ -59,11 +79,218 @@ async def complete_json(system: str, user: str, schema: type[T], *, model: str |
     raise LLMUnavailable(f"LLM output failed validation twice: {last_err}")
 
 
-# ───────────────────────── providers ─────────────────────────
+# ───────────────────────── validation ─────────────────────────
+_TOPICS = {t.value for t in Topic}
+
+
+def _clean_topics(v: Any) -> list[str]:
+    if not isinstance(v, list):
+        return []
+    out: list[str] = []
+    for t in v:
+        s = str(t).strip().lower().replace(" ", "_").replace("-", "_")
+        if s in _TOPICS and s not in out:
+            out.append(s)
+    return out
+
+
+def _sanitize_candidates(d: dict[str, Any]) -> dict[str, Any]:
+    cands = d.get("candidates") if isinstance(d, dict) else None
+    if isinstance(d, list):
+        cands = d
+    if not isinstance(cands, list):
+        return d
+    clean = []
+    for c in cands:
+        if isinstance(c, str):
+            c = {"text": c}
+        if not isinstance(c, dict) or not str(c.get("text", "")).strip():
+            continue
+        mids = c.get("memory_ids") or []
+        clean.append({"text": str(c["text"]).strip(), "topics": _clean_topics(c.get("topics")),
+                      "memory_ids": [str(m) for m in mids] if isinstance(mids, list) else []})
+    return {"candidates": clean}
+
+
+def _sanitize_summary(d: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(d, dict) and "topics" in d:
+        d = {**d, "topics": _clean_topics(d["topics"])}
+    return d
+
+
+# Off-taxonomy topics from a real LLM ("weather") must not fail the whole response.
+_SANITIZERS: dict[str, Callable[[Any], Any]] = {
+    "GeneratedCandidates": _sanitize_candidates,
+    "EpisodeSummary": _sanitize_summary,
+}
+
+
+def _validate(schema: type[T], raw: str) -> T:
+    data = json.loads(_extract_json(raw))
+    fix = _SANITIZERS.get(schema.__name__)
+    if fix:
+        data = fix(data)
+    return schema.model_validate(data)
+
+
+def _extract_json(text: str) -> str:
+    text = _THINK.sub("", text).strip()
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
+    if fence:
+        text = fence.group(1).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError(f"no JSON object in LLM output: {text[:200]!r}")
+    return text[start:end + 1]
+
+
 def _schema_hint(schema: type[BaseModel]) -> str:
     return json.dumps(schema.model_json_schema(), separators=(",", ":"))
 
 
+def _json_system(system: str, schema: type[BaseModel]) -> str:
+    return (f"{system}\n\nRespond with ONLY a JSON object (no prose, no markdown fences) that "
+            f"matches this JSON schema:\n{_schema_hint(schema)}")
+
+
+# ───────────────────────── Nebius Token Factory ─────────────────────────
+def _get_nebius():
+    global _nebius_client
+    from openai import AsyncOpenAI
+
+    if _nebius_client is None:
+        if not settings.nebius_api_key:
+            raise LLMUnavailable("NEBIUS_API_KEY not set (or set MOCK_LLM=true)")
+        _nebius_client = AsyncOpenAI(base_url=settings.nebius_base_url,
+                                     api_key=settings.nebius_api_key,
+                                     timeout=settings.llm_timeout_s, max_retries=1)
+    return _nebius_client
+
+
+def _nebius_requested(model: str | None) -> str:
+    """Map a caller's model arg onto a Nebius model id.
+    Callers pass settings.suggest_model / settings.summary_model (Claude ids from the original
+    design); those map to the Nebius equivalents. A Nebius-style id ("org/name") passes through."""
+    if model and "/" in model:
+        return model
+    if model and model == settings.summary_model and settings.nebius_summary_model:
+        return settings.nebius_summary_model
+    return settings.nebius_model
+
+
+async def list_nebius_models() -> list[str]:
+    global _nebius_models
+    if _nebius_models is None:
+        page = await _get_nebius().models.list()
+        _nebius_models = sorted(m.id for m in page.data)
+    return _nebius_models
+
+
+async def resolve_nebius_model(requested: str) -> str:
+    """Return `requested` if /v1/models lists it, else the first available fallback."""
+    global _resolve_lock
+    if requested in _nebius_resolved:
+        return _nebius_resolved[requested]
+    if _resolve_lock is None:
+        _resolve_lock = asyncio.Lock()
+    async with _resolve_lock:
+        if requested in _nebius_resolved:
+            return _nebius_resolved[requested]
+        try:
+            available = await list_nebius_models()
+        except Exception as e:  # noqa: BLE001  can't list → trust the configured id
+            log.warning("nebius /v1/models failed (%s); using %s unverified", str(e)[:200], requested)
+            _nebius_resolved[requested] = requested
+            return requested
+        chosen = pick_model(requested, available,
+                            [f.strip() for f in settings.nebius_fallback_models.split(",") if f.strip()])
+        if chosen is None:
+            raise LLMUnavailable(f"nebius: {requested} not available and no fallback listed; "
+                                 f"available: {available[:20]}")
+        if chosen != requested:
+            log.warning("nebius model %s not available; using fallback %s", requested, chosen)
+        else:
+            log.info("nebius model %s verified via /v1/models", chosen)
+        _nebius_resolved[requested] = chosen
+        return chosen
+
+
+def pick_model(requested: str, available: list[str], fallbacks: list[str]) -> str | None:
+    """Pure: exact match, then case-insensitive match, then first available fallback."""
+    avail = set(available)
+    if requested in avail:
+        return requested
+    lower = {a.lower(): a for a in available}
+    if requested.lower() in lower:
+        return lower[requested.lower()]
+    for fb in fallbacks:
+        if fb in avail:
+            return fb
+        if fb.lower() in lower:
+            return lower[fb.lower()]
+    return None
+
+
+# ───────────────────────── OpenAI-compatible (Nebius + OpenAI) ─────────────────────────
+_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+async def _openai_compat_json(client, model: str, system: str, user: str, schema: type[BaseModel],
+                              temperature: float, max_tokens: int) -> str:
+    """Chat completion asking for JSON. Uses response_format=json_object when the model accepts
+    it; on a 400 that mentions it, remembers that and retries prompt-only."""
+    import openai
+
+    messages = [{"role": "system", "content": _json_system(system, schema)},
+                {"role": "user", "content": user}]
+    kwargs: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": max_tokens,
+                              "temperature": temperature}
+    if _json_mode_ok.get(model, True):
+        kwargs["response_format"] = {"type": "json_object"}
+    try:
+        resp = await client.chat.completions.create(**kwargs)
+    except openai.BadRequestError as e:
+        msg = str(e).lower()
+        if "response_format" in kwargs and ("response_format" in msg or "json" in msg):
+            log.warning("%s rejected response_format (%s); using prompt-only JSON", model, str(e)[:160])
+            _json_mode_ok[model] = False
+            kwargs.pop("response_format")
+        elif "max_tokens" in msg or "temperature" in msg:
+            kwargs.pop("temperature", None)
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        else:
+            raise LLMUnavailable(f"{model} 400: {str(e)[:200]}") from e
+        try:
+            resp = await client.chat.completions.create(**kwargs)
+        except openai.APIError as e2:
+            raise LLMUnavailable(f"{model}: {str(e2)[:200]}") from e2
+    except (openai.APIConnectionError, openai.APITimeoutError) as e:
+        raise LLMUnavailable(f"{model} connection: {str(e)[:200]}") from e
+    except openai.APIStatusError as e:
+        raise LLMUnavailable(f"{model} {e.status_code}: {str(e)[:200]}") from e
+    if not resp.choices:
+        raise ValueError(f"{model} returned no choices")
+    msg = resp.choices[0].message
+    text = msg.content or ""
+    if not text.strip():
+        # some reasoning models leave content empty and put the answer in reasoning_content
+        text = getattr(msg, "reasoning_content", None) or ""
+    return text
+
+
+def _get_openai():
+    global _openai_client
+    from openai import AsyncOpenAI
+
+    if _openai_client is None:
+        if not settings.openai_api_key:
+            raise LLMUnavailable("OPENAI_API_KEY not set (or set MOCK_LLM=true)")
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key,
+                                     timeout=settings.llm_timeout_s, max_retries=1)
+    return _openai_client
+
+
+# ───────────────────────── Anthropic ─────────────────────────
 async def _anthropic_json(system: str, user: str, schema: type[T], model: str | None,
                           max_tokens: int) -> T:
     global _anthropic_client
@@ -73,7 +300,7 @@ async def _anthropic_json(system: str, user: str, schema: type[T], model: str | 
         if not settings.anthropic_api_key:
             raise LLMUnavailable("ANTHROPIC_API_KEY not set (or set MOCK_LLM=true)")
         _anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key,
-                                                     timeout=20.0, max_retries=1)
+                                                     timeout=settings.llm_timeout_s, max_retries=1)
     mdl = model or settings.suggest_model
     try:
         # Structured outputs: schema-constrained decoding, validated into `schema`.
@@ -88,7 +315,6 @@ async def _anthropic_json(system: str, user: str, schema: type[T], model: str | 
         if resp.parsed_output is not None:
             return resp.parsed_output
     except (AttributeError, TypeError, anthropic.BadRequestError) as e:
-        # Older SDK / model without structured outputs → plain JSON prompt.
         log.warning("structured outputs unavailable (%s); falling back to JSON prompt", str(e)[:200])
     except anthropic.APIConnectionError as e:
         raise LLMUnavailable(f"anthropic connection: {e}") from e
@@ -96,51 +322,17 @@ async def _anthropic_json(system: str, user: str, schema: type[T], model: str | 
         raise LLMUnavailable(f"anthropic {e.status_code}: {e.message}") from e
 
     resp = await _anthropic_client.messages.create(
-        model=mdl, max_tokens=max_tokens,
-        system=f"{system}\n\nRespond with ONLY a JSON object matching this JSON schema:\n{_schema_hint(schema)}",
+        model=mdl, max_tokens=max_tokens, system=_json_system(system, schema),
         messages=[{"role": "user", "content": user}],
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-    return schema.model_validate_json(_extract_json(text))
-
-
-async def _openai_json(system: str, user: str, schema: type[BaseModel], model: str | None,
-                       temperature: float, max_tokens: int) -> str:
-    global _openai_client
-    from openai import AsyncOpenAI
-
-    if _openai_client is None:
-        if not settings.openai_api_key:
-            raise LLMUnavailable("OPENAI_API_KEY not set (or set MOCK_LLM=true)")
-        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=20.0, max_retries=1)
-    resp = await _openai_client.chat.completions.create(
-        model=model if model and not model.startswith("claude") else settings.openai_suggest_model,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": f"{system}\n\nRespond with ONLY a JSON object matching "
-                                          f"this JSON schema:\n{_schema_hint(schema)}"},
-            {"role": "user", "content": user},
-        ],
-        max_completion_tokens=max_tokens,
-    )
-    return resp.choices[0].message.content or ""
-
-
-def _extract_json(text: str) -> str:
-    text = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
-    if fence:
-        text = fence.group(1).strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError(f"no JSON object in LLM output: {text[:200]!r}")
-    return text[start:end + 1]
+    return _validate(schema, text)
 
 
 # ───────────────────────── mock ─────────────────────────
 # Canned replies in Maya's voice. Keyed by relationship parsed from the prompt
 # (the pipeline writes a `RELATIONSHIP: <value>` line). Each list deliberately mixes
-# intents and includes one sensitive candidate so the guard has something to block.
+# intents and includes a sensitive candidate so the guard has something to block.
 _MOCK_CANDIDATES: dict[str, list[tuple[str, list[str]]]] = {
     "clinician": [
         ("Yes please, same refill as October.", ["medication", "logistics"]),
@@ -191,10 +383,6 @@ def mock_response(system: str, user: str, schema: type[T]) -> T:
         mem_ids = re.findall(r"\[(mem_[\w]+)\]", user)[:1]
         out = [{"text": t, "topics": tp, "memory_ids": mem_ids if i == 0 else []}
                for i, (t, tp) in enumerate(cands)]
-        # pad to 6 with safe small talk when the avoid list removed some
-        pad = ["Ha, fair enough.", "Tell me more.", "Sounds good.", "Thanks!"]
-        while len(out) < 6 and pad:
-            out.append({"text": pad.pop(0), "topics": ["small_talk"], "memory_ids": []})
         return schema.model_validate({"candidates": out})
     if name == "EpisodeSummary":
         return schema.model_validate({

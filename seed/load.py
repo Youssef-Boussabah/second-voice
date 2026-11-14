@@ -5,7 +5,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,15 +42,17 @@ async def main(reset: bool) -> None:
                 "people": [item["_id"] for item in read_json("people.json")],
                 "memories": [item["_id"] for item in read_json("memories.json")],
                 "boundaries": [item["_id"] for item in read_json("boundaries.json")],
+                "events": [item["_id"] for item in read_json("history_events.json")],
             }
             for collection, ids in seed_ids.items():
                 await database[collection].delete_many({"_id": {"$in": ids}})
 
-        user = {"_id": "usr_maya", "name": "Maya Chen", "created_at": datetime(2026, 9, 1, tzinfo=__import__("datetime").timezone.utc)}
+        user = {"_id": "usr_maya", "name": "Maya Chen", "created_at": datetime(2026, 9, 1, tzinfo=timezone.utc)}
         await database.users.update_one({"_id": user["_id"]}, {"$setOnInsert": user}, upsert=True)
         people = read_json("people.json")
         boundaries = read_json("boundaries.json")
         memories = read_json("memories.json")
+        events = [parse_dates(item) for item in read_json("history_events.json")]
         for memory in memories:
             memory["user_id"] = "usr_maya"
             memory["topics"] = memory.get("topics", [])
@@ -60,6 +62,7 @@ async def main(reset: bool) -> None:
             "people": [parse_dates(item) | {"user_id": "usr_maya"} for item in people],
             "memories": [parse_dates(item) for item in memories],
             "boundaries": [parse_dates(item) | {"user_id": "usr_maya"} for item in boundaries],
+            "events": events,
         }
         for name, documents in payloads.items():
             if documents:
@@ -67,7 +70,7 @@ async def main(reset: bool) -> None:
                     UpdateOne({"_id": document["_id"]}, {"$set": document}, upsert=True)
                     for document in documents
                 ])
-        print(f"Loaded {len(people)} demo partners, {len(memories)} memories, and {len(boundaries)} seed policies into {settings.mongodb_db}.")
+        print(f"Loaded {len(people)} demo partners, {len(memories)} memories, {len(boundaries)} seed policies, and {len(events)} history events into {settings.mongodb_db}.")
     finally:
         await client.close()
 

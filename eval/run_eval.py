@@ -111,7 +111,8 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
             if memory.get("person_id") in person_ids:
                 memory["person_id"] = person_ids[memory["person_id"]]
             memory["seed_source"] = "lane-d-eval"
-            memory.pop("embedding", None)
+            if settings.mock_embed:
+                memory.pop("embedding", None)
             memory_ids.add(memory["_id"])
             await database[db.MEMORIES].insert_one(memory)
         for source in json.loads((ROOT / "seed" / "boundaries.json").read_text()):
@@ -157,6 +158,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         memory_text = " ".join(memory.text.lower() for memory in [*context.relevant_episodes, *context.recent_episodes, *context.facts])
         memory_hit = condition == "warm" and any(term in memory_text for term in expected_terms)
         memory_hits += int(memory_hit)
+        phrasebook_texts = {norm(memory.text) for memory in context.phrases}
         for boundary in context.boundaries:
             scope_type = enum_value(boundary.scope.type)
             scope_applies = (
@@ -175,7 +177,8 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         latency.append(int(suggestion_set.latency_ms.get("total", elapsed_ms)))
         candidates = suggestion_set.candidates
         shown += len(candidates)
-        phrase_reuse += sum(1 for candidate in candidates if enum_value(candidate.source) == "phrasebook")
+        phrasebook_matches = sum(1 for candidate in candidates if norm(candidate.text) in phrasebook_texts)
+        phrase_reuse += phrasebook_matches
         leak_count = sum(
             bool({enum_value(topic) for topic in candidate.topics} & learned_blocked_topics)
             for candidate in candidates
@@ -198,10 +201,11 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
             "condition": condition, "conversation_id": scenario["conversation_id"],
             "person_id": fixture_person_id, "partner_text": scenario["partner_text"],
             "intended": scenario["intended"], "candidate_count": len(candidates),
-            "exact_text_hit": exact_hit, "privacy_leaks": leak_count,
+            "hit": exact_hit, "privacy_leaks": leak_count,
             "hit_method": hit_method,
             "retrieval_hit_at_3": memory_hit, "phrasebook_candidates": sum(
                 1 for candidate in candidates if enum_value(candidate.source) == "phrasebook"),
+            "phrasebook_reuses": phrasebook_matches,
             "candidates": [{"text": candidate.text, "topics": [enum_value(topic) for topic in candidate.topics],
                             "source": enum_value(candidate.source), "memory_ids": candidate.memory_ids}
                            for candidate in candidates],
@@ -243,7 +247,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
     })
     metrics = {
         "hit_at_4": hits / len(scenarios),
-        "taps_per_message": (hits + sum(math.ceil(len(row["intended"]) * 0.5) for row in turn_rows if not row["exact_text_hit"])) / len(scenarios),
+        "taps_per_message": (hits + sum(math.ceil(len(row["intended"]) * 0.5) for row in turn_rows if not row["hit"])) / len(scenarios),
         "leaks_per_conversation": leaks / len({row["conversation_id"] for row in turn_rows}),
         "latency_p50_ms": percentile(latency, 0.50), "latency_p95_ms": percentile(latency, 0.95),
         "rules_learned": active_rules, "false_positive_rules": false_positives, "runs": 1,
@@ -279,14 +283,17 @@ async def main() -> None:
             "label": label,
             "header": f"{label} EVALUATION — deterministic canned LLM and mock query embeddings" if label == "MOCK" else "REAL EVALUATION — Lane A Nebius/Voyage pipeline",
             "created_at": datetime.now(timezone.utc).isoformat(), "commit": commit,
-            "command": "source .venv/bin/activate && python eval/run_eval.py " + " ".join(sys.argv[1:]),
+            "command": os.environ.get(
+                "EVAL_COMMAND",
+                "source .venv/bin/activate && python eval/run_eval.py " + " ".join(sys.argv[1:]),
+            ),
             "models": {"llm_provider": settings.llm_provider, "suggest_model": settings.suggest_model,
                        "summary_model": settings.nebius_summary_model or settings.nebius_model,
                        "embed_model": settings.embed_model, "embed_dim": settings.embed_dim,
                        "temperature": 0.3},
             "mock_flags": {"MOCK_LLM": settings.mock_llm, "MOCK_EMBED": settings.mock_embed},
             "scenario_count": len(scenarios), "conditions": configs,
-            "measurement_notes": "No LLM judge. Hit uses normalized exact text; mock query vectors are transient and never stored.",
+            "measurement_notes": ("No LLM judge. MOCK hit uses normalized exact text; REAL hit uses Voyage cosine >= 0.80. Phrasebook reuse is exact normalized candidate-to-retrieved-phrase matching. Mock query vectors are transient and never stored."),
         }
         results_dir = ROOT / "eval" / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -303,7 +310,8 @@ async def main() -> None:
         lines = [f"# {label} Evaluation Results", "", f"Commit: `{commit}`", f"Command: `{payload['command']}`", "",
                  f"MOCK_LLM={settings.mock_llm} and MOCK_EMBED={settings.mock_embed}.", "",
                  "| Metric | COLD | WARM |", "|---|---:|---:|"]
-        for key, title in (("hit_at_4", "Exact-text hit@4"), ("taps_per_message", "Taps/message"),
+        hit_title = "Exact-text hit@4" if settings.mock_embed else "Voyage cosine hit@4 (≥0.80)"
+        for key, title in (("hit_at_4", hit_title), ("taps_per_message", "Taps/message"),
                            ("leaks_per_conversation", "Leaks/conversation"), ("privacy_leak_rate", "Privacy leak rate"),
                            ("phrasebook_reuse_rate", "Phrasebook reuse rate"), ("latency_p50_ms", "Latency p50 (ms)"),
                            ("latency_p95_ms", "Latency p95 (ms)")):
@@ -319,8 +327,8 @@ async def main() -> None:
                     "label": label, "commit": commit, "mock_flags": payload["mock_flags"],
                     "created_at": datetime.now(timezone.utc),
                 })
-        print(f"MOCK evaluation complete: {json_path.relative_to(ROOT)}")
-        print(f"MOCK summary: {md_path.relative_to(ROOT)}")
+        print(f"{label} evaluation complete: {json_path.relative_to(ROOT)}")
+        print(f"{label} summary: {md_path.relative_to(ROOT)}")
     finally:
         await client.close()
 

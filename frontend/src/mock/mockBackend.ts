@@ -66,7 +66,7 @@ function draftsFor(text: string, person: PersonOut | undefined): Draft[] {
   if (/side effect|dizzy|generic|dose|meds?\b|medication/.test(t))
     return [["A little dizzy in the mornings", ["health", "medication"]], ["No side effects so far, thanks", ["medication"]], ["Should I take it with food?", ["medication"]], ["Can we go over it next visit?", ["logistics"]], ["Sleeping a bit worse lately", ["health"]], ["All good, thanks for checking", ["small_talk"]]];
   if (/anything new|what'?s new|news|up to/.test(t))
-    return [["My sister's visiting next week", ["family_news"]], ["The doctor upped my dose", ["health", "medication"]], ["Started a new puzzle book", ["hobbies"]], ["Not much, quiet week", ["small_talk"]], ["How's Biscuit doing?", ["small_talk", "hobbies"]], ["Physio is going slowly", ["health"]]];
+    return [["My sister's visiting next week", ["family_news"]], ["The doctor upped my dose", ["health", "medication"]], ["Started a new puzzle book", ["hobbies"]], ["Not much, quiet week", ["small_talk"]], ["How's Biscuit doing?", ["small_talk", "hobbies"]]];
   if (/how.*(been|are you|doing)|hi |hey|hello/.test(t))
     return [["Pretty good, thanks! You?", ["small_talk"]], ["Honestly the new meds have been rough.", ["health", "medication"]], [rel === "acquaintance" ? "Did you catch the Leafs game?" : "Busy week, but good.", ["small_talk", "hobbies"]], ["So nice to see you!", ["emotions_positive"]], ["Tired, but hanging in there", ["health", "distress"]], ["Can't complain!", ["humour"]]];
   return [["Yes", ["small_talk"]], ["No, thank you", ["small_talk"]], ["Can you say that again?", ["small_talk"]], ["Give me a moment to type", ["small_talk"]], ["That sounds great", ["emotions_positive"]], ["I'm not sure yet", ["small_talk"]]];

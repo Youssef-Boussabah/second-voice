@@ -7,6 +7,7 @@ import { newId } from "./contracts";
 import { api, connectSession } from "./lib/api";
 import type { WsHandle } from "./lib/ws";
 import { speak, stopSpeaking } from "./lib/speech";
+import { USE_MOCKS } from "./config";
 
 export type Screen = "talk" | "memory" | "scoreboard";
 export type WsStatus = "connecting" | "open" | "closed" | "idle";
@@ -53,6 +54,7 @@ interface State {
   resolveProposed(confirm: boolean): Promise<void>;
   endConversation(): Promise<void>;
   refreshBoundaries(): Promise<void>;
+  resetDemo(): Promise<void>;
   pushToast(t: Omit<Toast, "id">): void;
   dismissToast(id: string): void;
 }
@@ -65,6 +67,11 @@ export const useStore = create<State>((set, get) => {
   const fail = (where: string) => (e: unknown) => {
     console.error(`[SV] ${where}`, e);
     get().pushToast({ tone: "error", title: `Couldn't ${where}`, body: errMsg(e) });
+  };
+
+  // Failure plan: if ElevenLabs is down the narrator must know it was the browser voice.
+  const noteVoice = (v: "elevenlabs" | "browser") => {
+    if (v === "browser" && !USE_MOCKS) get().pushToast({ tone: "info", title: "Spoken with the browser voice", body: "Cloned voice unavailable right now." });
   };
 
   const loadContext = async (personId: string) => {
@@ -215,7 +222,7 @@ export const useStore = create<State>((set, get) => {
           suggestions: st.suggestions ? { ...st.suggestions, status: "chosen", chosen_candidate_id: c.id } : null,
           turns: st.turns.some((t) => t._id === out.utterance._id) ? st.turns : [...st.turns, out.utterance].slice(-12),
         }));
-        await speak(out.text_to_speak);
+        noteVoice(await speak(out.text_to_speak));
       } catch (e) {
         fail("speak that")(e);
       } finally {
@@ -231,7 +238,7 @@ export const useStore = create<State>((set, get) => {
         const s = await ensureSession();
         const out = await api.typedReply({ session_id: s._id, text: clean, event_id: newId("evt") });
         set((st) => ({ turns: st.turns.some((t) => t._id === out.utterance._id) ? st.turns : [...st.turns, out.utterance].slice(-12) }));
-        await speak(out.text_to_speak);
+        noteVoice(await speak(out.text_to_speak));
       } catch (e) {
         fail("speak your reply")(e);
       } finally {
@@ -277,6 +284,24 @@ export const useStore = create<State>((set, get) => {
       setTimeout(() => old?.close(), 5000);
       set({ session: null, turns: [], suggestions: null, wsStatus: "idle", unknownUtteranceId: null });
       if (s) await api.endSession(s._id).catch(fail("end the conversation"));
+    },
+
+    async resetDemo() {
+      stopSpeaking();
+      ws?.close();
+      ws = null;
+      try {
+        await api.resetDemo();
+      } catch (e) {
+        fail("reset the demo")(e);
+        return;
+      }
+      set({
+        screen: "talk", personId: null, context: null, session: null, wsStatus: "idle", turns: [],
+        suggestions: null, speakingId: null, busy: false, unknownUtteranceId: null, proposed: null, privacyLog: [],
+      });
+      await get().init();
+      get().pushToast({ tone: "info", title: "Demo reset", body: "Memories and rules re-seeded." });
     },
 
     async refreshBoundaries() {

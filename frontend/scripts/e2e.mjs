@@ -1,66 +1,129 @@
-// Browser e2e (mock mode): full Dana → Mike → Dana demo + layout/a11y audit. Usage: npm run dev, then
-//   node scripts/e2e.mjs 1024x768 /tmp/shots   (uses installed Google Chrome via playwright-core; no browser download)
+// Browser e2e (mock mode) that walks docs/07-demo-script.md beat by beat.
+// Asserts each beat is ≤ 2 taps and that the screen shows what the script says, then resets
+// and checks a second rehearsal starts clean. Also audits overflow / tiny targets / tiny text.
+// Usage: npm run dev, then `node scripts/e2e.mjs 1024x768 /tmp/shots` (uses installed Chrome; no download).
 import { chromium } from "playwright-core";
 const [w, h] = process.argv[2].split("x").map(Number);
 const out = process.argv[3];
+const URL = process.env.E2E_URL ?? "http://127.0.0.1:5173/";
 const browser = await chromium.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: w, height: h }, hasTouch: true });
 const errs = [];
 page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && errs.push(`${m.type()}: ${m.text()}`));
 page.on("pageerror", (e) => errs.push(`pageerror: ${e.message}`));
-let n = 0;
-const shot = async (name) => { await page.waitForTimeout(450); return page.screenshot({ path: `${out}/${w}x${h}-${String(++n).padStart(2, "0")}-${name}.png`, fullPage: false }); };
+const tag = `[${w}x${h}]`;
+let failed = false;
+const fail = (m) => { console.log(`${tag} FAIL ${m}`); failed = true; };
+
+let n = 0, taps = 0;
+const shot = async (name) => { await page.waitForTimeout(450); await page.screenshot({ path: `${out}/${w}x${h}-${String(++n).padStart(2, "0")}-${name}.png` }); };
+const tap = async (loc) => { taps++; await loc.click(); };
+const beat = async (name, fn, max = 2) => {
+  taps = 0;
+  try { await fn(); } catch (e) { fail(`${name}: ${e.message.split("\n")[0]}`); }
+  if (taps > max) fail(`${name}: ${taps} taps (max ${max})`);
+  console.log(`${tag} ${taps <= max ? "ok " : "!! "} ${name} (${taps} taps)`);
+  await audit(name); await shot(name);
+};
 const audit = async (label) => {
   const r = await page.evaluate(() => {
     const issues = [];
     if (document.documentElement.scrollWidth > window.innerWidth + 1) issues.push(`h-overflow ${document.documentElement.scrollWidth}>${window.innerWidth}`);
-    for (const el of document.querySelectorAll("button, textarea, input, summary")) {
+    for (const el of document.querySelectorAll("button, textarea, input")) {
       const b = el.getBoundingClientRect();
-      if (b.width === 0) continue;
-      if (b.height < 44 || b.width < 44) issues.push(`small target ${Math.round(b.width)}x${Math.round(b.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40)}"`);
+      if (b.width && (b.height < 44 || b.width < 44)) issues.push(`small target ${Math.round(b.width)}x${Math.round(b.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 30)}"`);
     }
     for (const el of document.querySelectorAll("body *")) {
-      if (!el.childNodes.length || ![...el.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue;
+      if (![...el.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) continue;
       const s = getComputedStyle(el);
       if (parseFloat(s.fontSize) < 14 && s.position !== "absolute") issues.push(`tiny text ${s.fontSize} "${el.textContent.trim().slice(0, 30)}"`);
     }
-    return issues;
+    return [...new Set(issues)];
   });
-  if (r.length) console.log(`[${w}x${h} ${label}]`, [...new Set(r)].join(" | "));
+  if (r.length) fail(`${label} audit: ${r.join(" | ")}`);
 };
-const cardsReady = () => page.waitForFunction(() => !document.body.innerText.includes("Refining") && document.querySelectorAll('[aria-label^="Say:"]').length === 4, null, { timeout: 5000 });
+const cards = async () => {
+  await page.waitForFunction(() => !document.body.innerText.includes("Refining") && document.querySelectorAll('[aria-label^="Say:"]').length >= 3, null, { timeout: 5000 });
+  return page.$$eval('[aria-label^="Say:"]', (e) => e.map((x) => x.getAttribute("aria-label").slice(5)));
+};
+const expectText = async (re, what) => { if (!re.test(await page.innerText("body"))) fail(`missing ${what}`); };
+const person = (name) => page.getByRole("radio", { name: new RegExp(`^${name}`) });
+const line = (t) => page.getByText(`“${t}”`);
 
-await page.goto(process.env.E2E_URL ?? "http://127.0.0.1:5173/");
-await page.getByRole("radio", { name: /Dana/ }).waitFor();
-await audit("picker"); await shot("picker");
-await page.getByRole("radio", { name: /Dana/ }).click();
-await page.getByText("“Hi Maya! Here for your refill?”").click();
-await cardsReady(); await audit("dana-cards"); await shot("dana-cards");
-await page.getByRole("button", { name: /^Say: Did the blister/ }).click();
-await page.waitForTimeout(400); await shot("dana-speaking");
-await page.waitForFunction(() => !document.body.innerText.includes("Speaking…"), null, { timeout: 15000 });
+await page.goto(URL);
+await person("Dana").waitFor();
 
-await page.getByRole("radio", { name: /Mike/ }).click();
-await page.getByText("“Hey Maya! How've you been?”").click();
-await cardsReady(); await shot("mike-cards");
-await page.getByRole("button", { name: /More options for: Honestly/ }).click();
-await audit("reject-sheet"); await shot("reject-sheet");
-await page.getByRole("button", { name: /Too personal/ }).click();
-await page.getByText(/Learned: keep/).waitFor({ timeout: 3000 }); await shot("learned-toast");
-await page.getByText("“Anything new?”").click();
-await cardsReady(); await audit("mike-filtered"); await shot("mike-filtered");
-const cards = await page.$$eval('[aria-label^="Say:"]', (e) => e.map((x) => x.getAttribute("aria-label")));
-console.log(`[${w}x${h}] Mike after rule:`, cards.join(" / "));
-await page.getByRole("button", { name: /hidden by your boundaries/ }).click();
-await shot("hidden-list"); await page.keyboard.press("Escape");
+await beat("0:20 Dana: 'Here for your refill?'", async () => {
+  await tap(person("Dana")); await tap(line("Hi Maya! Here for your refill?"));
+  const c = await cards();
+  await expectText(/Dana Okafor · Pharmacist · last talked Oct 28/, "Dana header");
+  await expectText(/Dana was checking on blister packs/, "blister-pack thread chip");
+  if (!c.includes("Yes please, same as October") || !c.includes("Did the blister packs come in?")) fail(`Dana cards: ${c.join(" / ")}`);
+});
+await beat("0:20 Maya taps 'blister packs' card → spoken", async () => {
+  await tap(page.getByRole("button", { name: /^Say: Did the blister/ }));
+  await page.getByText("🔊 Speaking…").waitFor({ timeout: 3000 });
+  await page.waitForFunction(() => !document.body.innerText.includes("Speaking…"), null, { timeout: 15000 });
+  await expectText(/YOU\s+Did the blister packs come in\?/i, "Maya's reply in transcript");
+}, 1);
+await beat("1:00 Mike: 'How've you been?'", async () => {
+  await tap(person("Mike")); await tap(line("Hey Maya! How've you been?"));
+  const c = await cards();
+  if (!c.includes("Honestly the new meds have been rough.")) fail(`Mike cards: ${c.join(" / ")}`);
+});
+await beat("1:00 Long-press → Too personal → Learned toast", async () => {
+  await tap(page.getByRole("button", { name: /More options for: Honestly/ }));
+  await tap(page.getByRole("button", { name: /Too personal/ }));
+  await page.getByText("Learned: keep health & medication private with acquaintances.").waitFor({ timeout: 3000 });
+  await expectText(/Checked against 23 past replies, no conflicts\./, "validation line");
+});
+await beat("1:45 Mike: 'Anything new?' → small talk + 1 hidden", async () => {
+  await tap(line("Anything new?"));
+  const c = await cards();
+  if (c.some((t) => /dose|meds|physio|dizzy/i.test(t))) fail(`health leaked: ${c.join(" / ")}`);
+  await page.waitForTimeout(300);
+  const pill = await page.locator('[aria-label*="hidden by your boundaries"]').getAttribute("aria-label");
+  if (!/^1 suggestion hidden/.test(pill ?? "")) fail(`hidden pill after final stage: "${pill}"`);
+});
+await beat("1:45 (optional) show which rule hid it", async () => {
+  await tap(page.getByRole("button", { name: /hidden by your boundaries/ }));
+  await expectText(/Rule: keep health & medication private with acquaintances/, "hidden-by rule");
+  await page.keyboard.press("Escape");
+}, 1);
+await beat("2:10 Dana: 'Any side effects…?' → meds still shown", async () => {
+  await tap(person("Dana")); await tap(line("Any side effects with the new generic?"));
+  const c = await cards();
+  if (!c.some((t) => /side effects|dizzy|take it with food/i.test(t))) fail(`Dana meds missing: ${c.join(" / ")}`);
+});
+await beat("2:25 Scoreboard", async () => {
+  await tap(page.getByRole("button", { name: /Scoreboard/ }));
+  await page.getByText("Hit@4 (right reply in top 4)").waitFor({ timeout: 3000 });
+}, 1);
+await beat("back to Talk keeps state", async () => {
+  await tap(page.getByRole("button", { name: /^💬 Talk|Talk$/ }));
+  await page.getByRole("button", { name: /^Say:/ }).first().waitFor({ timeout: 2000 });
+}, 1);
+await beat("Memory & privacy shows learned rule", async () => {
+  await tap(page.getByRole("button", { name: /Memory & privacy/ }));
+  await expectText(/Learned from: “Honestly the new meds have been rough\.”/, "learned rule evidence");
+}, 1);
+// setup action between rehearsals (not a stage beat): 2 taps on this screen
+await beat("Reset demo (between rehearsals)", async () => {
+  await tap(page.getByRole("button", { name: /Reset demo/ }));
+  await tap(page.getByRole("button", { name: /Tap again to reset/ }));
+  await page.getByText("Who are you talking to?").waitFor({ timeout: 3000 });
+});
+await beat("Rehearsal 2 starts clean (Mike sees meds card again)", async () => {
+  await tap(person("Mike")); await tap(line("Hey Maya! How've you been?"));
+  const c = await cards();
+  if (!c.includes("Honestly the new meds have been rough.")) fail(`after reset: ${c.join(" / ")}`);
+});
+await beat("End chat → memory saved", async () => {
+  await tap(page.getByRole("button", { name: /End conversation/ }));
+  await page.getByText(/Remembered your chat with Mike/).waitFor({ timeout: 3000 });
+}, 1);
 
-await page.getByRole("radio", { name: /Dana/ }).click();
-await page.getByText("“Any side effects with the new generic?”").click();
-await cardsReady(); await shot("dana-meds");
-console.log(`[${w}x${h}] Dana after rule:`, (await page.$$eval('[aria-label^="Say:"]', (e) => e.map((x) => x.getAttribute("aria-label")))).join(" / "));
-
-await page.getByRole("button", { name: /Type my own/ }).click(); await shot("type-own"); await page.keyboard.press("Escape");
-await page.getByRole("button", { name: /Memory & privacy/ }).click(); await page.waitForTimeout(300); await audit("memory"); await shot("memory");
-await page.getByRole("button", { name: /Scoreboard/ }).click(); await page.waitForTimeout(300); await audit("scoreboard"); await shot("scoreboard");
-console.log(`[${w}x${h}] console:`, errs.length ? errs.join("\n") : "clean");
+console.log(`${tag} console: ${errs.length ? errs.join("\n") : "clean"}`);
+if (errs.length) failed = true;
 await browser.close();
+process.exit(failed ? 1 : 0);

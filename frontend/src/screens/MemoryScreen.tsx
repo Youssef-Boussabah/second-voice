@@ -3,6 +3,7 @@ import type { Boundary, PersonContext } from "../contracts";
 import { api } from "../lib/api";
 import { USE_MOCKS } from "../config";
 import { mockProposeBoundary } from "../mock/mockBackend";
+import ResetDemoButton from "../components/ResetDemoButton";
 import { relLabel } from "../components/PartnerBar";
 import { Button } from "../components/ui";
 import { listJoin, scopeLabel, topicLabel, useStore } from "../store";
@@ -174,7 +175,7 @@ function PrivacyLog() {
 export default function MemoryScreen() {
   return (
     <div className="mx-auto grid max-w-6xl gap-4 p-4 lg:grid-cols-2">
-      <div className="flex flex-col gap-4"><PersonMemory /><PrivacyLog /></div>
+      <div className="flex flex-col gap-4"><PersonMemory /><PrivacyLog /><ResetDemoButton className="self-start text-lg" /></div>
       <BoundaryList />
     </div>
   );

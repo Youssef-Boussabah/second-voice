@@ -4,6 +4,7 @@ import Suggestions from "../components/Suggestions";
 import { IncomingInput, Transcript, WhosThis } from "../components/Incoming";
 import { useLandscape } from "../lib/useLandscape";
 import { useStore } from "../store";
+import ResetDemoButton from "../components/ResetDemoButton";
 
 function EndButton() {
   const session = useStore((s) => s.session);
@@ -26,6 +27,7 @@ export default function TalkScreen() {
         <h1 className="text-4xl font-bold">Who are you talking to?</h1>
         <p className="text-xl text-muted">Pick a person so replies fit them. You can switch any time.</p>
         <PartnerPicker />
+        <ResetDemoButton className="mt-8 self-start text-lg text-muted" />
       </div>
     );
   }

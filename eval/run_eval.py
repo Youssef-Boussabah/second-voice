@@ -198,7 +198,8 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         turn_rows.append(row)
 
         if condition == "warm" and fixture_person_id == "per_mike" and not rejection_learned:
-            rejected = next((candidate for candidate in candidates if set(map(str, candidate.topics)) & learned_blocked_topics), None)
+            rejected = next((candidate for candidate in candidates if {enum_value(topic) for topic in candidate.topics} & learned_blocked_topics), None)
+            row["rejection_candidate_found"] = rejected is not None
             if rejected:
                 rejection = Event(
                     user_id=user_id, session_id=session.id, type=EventType.suggestion_rejected,
@@ -209,6 +210,8 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
                 await database[db.EVENTS].insert_one(rejection.to_mongo())
                 learned = await propose_and_validate(rejection)
                 rejection_learned = learned is not None and enum_value(learned.status) == "active"
+                row["learned_boundary_id"] = learned.id if learned else None
+                row["learned_boundary_status"] = enum_value(learned.status) if learned else None
                 follow_up = Utterance(
                     session_id=session.id, user_id=user_id,
                     speaker=utterance.speaker, text=scenario["partner_text"], source=UtteranceSource.text,

@@ -43,7 +43,7 @@ async def _set_boundary_status(boundary_id: str, status: str) -> Boundary:
 
 @router.get("/people/{person_id}/context", response_model=PersonContext)
 async def person_context(person_id: str):
-    people = await db.db()[db.PEOPLE].find_one({"_id": person_id, "user_id": settings.demo_user_id})
+    people = await db.db()[db.PEOPLE].find_one({"_id": person_id, "user_id": settings.demo_user_id}, {"relationship": 1})
     if not people:
         raise HTTPException(404, "person not found")
     context = await retrieve_person_context(settings.demo_user_id, person_id, people["relationship"])

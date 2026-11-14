@@ -14,23 +14,40 @@ from app.db import BOUNDARIES, EVENTS, db
 from app.learning.demo_seed import LEARNED_TAG
 
 
+# DECISION: the LLM and the guard's keyword net tag "health" and "medication" independently
+# (guard/enforce.py keeps them apart on purpose), so a card tagged only "health" that is rejected
+# as too personal would leave "The meds are doing their job" unblocked for the same person.
+# Measured live 2026-11-14 with Mike. A too_personal rejection on either topic learns both.
+TOPIC_FAMILIES: tuple[frozenset[str], ...] = (frozenset({"health", "medication"}),)
+
+
+def _learnable_topics(topics: list[str]) -> set[str]:
+    out = set(topics) & SENSITIVE_TOPICS
+    for family in TOPIC_FAMILIES:
+        if out & family:
+            out |= family
+    return out
+
+
 async def propose_and_validate(evt: Event) -> Boundary | None:
     """Learn a narrow rule only after checking the user's prior replies."""
-    topics = sorted(set(evt.topics) & SENSITIVE_TOPICS)
-    if evt.reason != "too_personal" or not topics or not evt.relationship:
+    wanted = _learnable_topics(list(evt.topics))
+    if evt.reason != "too_personal" or not wanted or not evt.relationship:
         return None
     database = db()
-    existing = await database[BOUNDARIES].find_one({
+    existing = await database[BOUNDARIES].find({
         "user_id": evt.user_id,
         "status": "active",
-        "topics": {"$in": topics},
+        "topics": {"$in": sorted(wanted)},
         "$or": [
             {"scope": {"type": "global", "value": None}},
             {"scope": {"type": "relationship", "value": evt.relationship}},
             {"scope": {"type": "person", "value": evt.person_id}},
         ],
-    })
-    if existing:
+    }).to_list(length=500)
+    covered = {topic for record in existing for topic in record.get("topics", [])}
+    topics = sorted(wanted - covered)   # only learn what no active rule already blocks
+    if not topics:
         return None
 
     history = await database[EVENTS].find({

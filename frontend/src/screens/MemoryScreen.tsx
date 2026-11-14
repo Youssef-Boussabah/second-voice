@@ -115,7 +115,7 @@ function BoundaryList() {
       </div>
       <p className="text-lg text-muted">Enforced in code before any suggestion is shown. Learned when you mark a reply “too personal”.</p>
       {USE_MOCKS && (
-        <Button tone="ghost" className="self-start text-base" onClick={() => mockProposeBoundary("service", ["location_schedule"])}>
+        <Button tone="ghost" className="self-start text-base" onClick={() => { mockProposeBoundary("service", ["location_schedule"]); void refresh(); }}>
           Mock: simulate a proposed rule
         </Button>
       )}

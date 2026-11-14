@@ -1,4 +1,6 @@
 """MongoDB client + collection names. Lane A owns this file."""
+import os
+
 from pymongo import AsyncMongoClient
 
 from app.config import settings
@@ -27,7 +29,10 @@ _client: AsyncMongoClient | None = None
 def client() -> AsyncMongoClient:
     global _client
     if _client is None:
-        _client = AsyncMongoClient(settings.mongodb_uri, appname="second-voice", tz_aware=True)
+        # MONGO_APPNAME identifies the process in Atlas ($currentOp / Real-Time panel), e.g. the
+        # learning worker sets "second-voice-worker-v2/<host>:<pid>".
+        _client = AsyncMongoClient(settings.mongodb_uri, appname=os.environ.get("MONGO_APPNAME", "second-voice"),
+                                   tz_aware=True)
     return _client
 
 

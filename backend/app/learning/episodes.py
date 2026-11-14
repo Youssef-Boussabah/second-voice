@@ -11,7 +11,7 @@ from app.config import settings
 from app.contracts import EpisodeSummary, Event
 from app.db import MEMORIES, PEOPLE, SESSIONS, UTTERANCES, db
 from app.llm import complete_json
-from app.learning.memory import save_episode
+from app.learning.memory import resolve_threads, save_episode
 from app.memory.retrieval import partner_segment
 
 log = logging.getLogger(__name__)
@@ -35,8 +35,12 @@ async def summarize_session(evt: Event) -> str | None:
         return None
     database = db()
     memory_id = episode_id(evt.session_id)
-    if await database[MEMORIES].find_one({"_id": memory_id}, {"_id": 1}):
-        log.info("episode exists for session %s (%s); skipping re-delivery", evt.session_id, memory_id)
+    existing = await database[MEMORIES].find_one({"_id": memory_id}, {"person_id": 1, "resolves_thread_ids": 1})
+    if existing:
+        # re-delivery or retry after a partial run: no second episode, no second LLM call, but
+        # finish the (idempotent) thread resolution in case the first run died before it
+        await resolve_threads(evt.user_id, existing.get("person_id"), existing.get("resolves_thread_ids") or [])
+        log.info("episode exists for session %s (%s); completed idempotently", evt.session_id, memory_id)
         return memory_id
     person_id = evt.person_id
     if not person_id:

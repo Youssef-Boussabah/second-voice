@@ -25,21 +25,31 @@ async def save_episode(user_id: str, person_id: str, session_id: str, summary: E
         text=summary.summary, topics=summary.topics, open_threads=summary.open_threads_new,
         session_id=session_id, embedding=await embed_document_or_none(summary.summary), created_at=now,
     )
-    record = memory.to_mongo() | LEARNED_TAG
+    # The threads this episode closes are stored WITH it, so a retry after a crash between the
+    # insert and the thread update can finish the job (resolve_threads is idempotent).
+    record = memory.to_mongo() | LEARNED_TAG | {"resolves_thread_ids": sorted(set(summary.threads_resolved_ids))}
     if record.get("embedding") is None:
         record.pop("embedding")  # missing (not null) so the backfill and $vectorSearch both skip/fill it
     try:
         await db()[MEMORIES].insert_one(record)
     except DuplicateKeyError:
+        existing = await db()[MEMORIES].find_one({"_id": memory.id}, {"resolves_thread_ids": 1})
+        await resolve_threads(user_id, person_id, (existing or {}).get("resolves_thread_ids") or [])
         return memory.id
-    resolved = set(summary.threads_resolved_ids)
-    if resolved:
-        async for episode in db()[MEMORIES].find({"user_id": user_id, "person_id": person_id, "kind": "episode",
-                                                  "open_threads.id": {"$in": sorted(resolved)}}):
-            threads = [thread | {"status": "resolved"} if thread.get("id") in resolved else thread
-                       for thread in episode.get("open_threads", [])]
-            await db()[MEMORIES].update_one({"_id": episode["_id"]}, {"$set": {"open_threads": threads}})
+    await resolve_threads(user_id, person_id, record["resolves_thread_ids"])
     return memory.id
+
+
+async def resolve_threads(user_id: str, person_id: str, thread_ids: list[str]) -> None:
+    """Mark these open threads resolved on this person's episodes. Safe to repeat."""
+    resolved = set(thread_ids)
+    if not resolved:
+        return
+    async for episode in db()[MEMORIES].find({"user_id": user_id, "person_id": person_id, "kind": "episode",
+                                              "open_threads.id": {"$in": sorted(resolved)}}):
+        threads = [thread | {"status": "resolved"} if thread.get("id") in resolved else thread
+                   for thread in episode.get("open_threads", [])]
+        await db()[MEMORIES].update_one({"_id": episode["_id"]}, {"$set": {"open_threads": threads}})
 
 
 async def retrieve_person_context(user_id: str, person_id: str, relationship: str) -> RetrievedContext:

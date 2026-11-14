@@ -4,13 +4,15 @@ Phrases are strictly per partner: a phrase learned while talking to Mike is stor
 person_id=per_mike and is only ever matched/deduped against Mike's phrases. Learning never
 writes person_id="global" (globals are hand-curated seed phrases only).
 """
+import hashlib
 import logging
 import time
 from datetime import datetime, timezone
 
 import numpy as np
+from pymongo.errors import DuplicateKeyError
 
-from app.contracts import Event, new_id
+from app.contracts import Event
 from app.db import MEMORIES, SUGGESTION_SETS, db
 from app.learning.safe_embed import embed_document_or_none
 from app.learning.demo_seed import LEARNED_TAG
@@ -71,22 +73,43 @@ async def learn_phrase(evt: Event) -> str | None:
             match = memory
             break
 
-    now = datetime.now(timezone.utc)
     if match:
-        await collection.update_one({"_id": match["_id"], "person_id": person_id},
-                                    {"$inc": {"uses": 1}, "$set": {"last_used": now}})
+        await _count_use(collection, match["_id"], person_id, evt.id)
         log.info("phrase reuse mem=%s person=%s %dms", match["_id"], person_id,
                  (time.perf_counter() - started) * 1000)
         return match["_id"]
-    memory_id = new_id("mem")
+    now = datetime.now(timezone.utc)
+    memory_id = phrase_id(evt.user_id, person_id, text)
     document = {
         "_id": memory_id, "user_id": evt.user_id, "person_id": person_id,
         "kind": "phrase", "status": "active", "text": text, "topics": [str(getattr(t, "value", t)) for t in evt.topics],
         "uses": 1, "last_used": now, "origin": ORIGIN[_event_type(evt)], "source_event_id": evt.id,
-        "embedding": vector, "created_at": now, **LEARNED_TAG,
+        "learning_events": [evt.id], "embedding": vector, "created_at": now, **LEARNED_TAG,
     }
     if vector is None:
         document.pop("embedding")
-    await collection.insert_one(document)
+    try:
+        await collection.insert_one(document)
+    except DuplicateKeyError:
+        # same phrase inserted concurrently (another event or a retry of this one): count once
+        await _count_use(collection, memory_id, person_id, evt.id)
+        return memory_id
     log.info("phrase new mem=%s person=%s %dms", memory_id, person_id, (time.perf_counter() - started) * 1000)
     return memory_id
+
+
+def phrase_id(user_id: str, person_id: str, text: str) -> str:
+    """Deterministic id per (user, partner, normalized wording): two writers of the same new
+    phrase collide on _id instead of creating duplicates."""
+    key = f"{user_id}|{person_id}|{' '.join(text.lower().split())}"
+    return "mem_ph_" + hashlib.sha1(key.encode()).hexdigest()[:16]
+
+
+async def _count_use(collection, memory_id: str, person_id: str, event_id: str) -> bool:
+    """+1 use, at most once per event (a retried event finds its id in learning_events)."""
+    result = await collection.update_one(
+        {"_id": memory_id, "person_id": person_id, "learning_events": {"$ne": event_id}},
+        {"$inc": {"uses": 1}, "$set": {"last_used": datetime.now(timezone.utc)},
+         "$push": {"learning_events": {"$each": [event_id], "$slice": -200}}},
+    )
+    return result.modified_count == 1

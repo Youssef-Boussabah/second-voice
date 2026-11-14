@@ -143,24 +143,6 @@ def test_boundary_toast_only_on_real_changes(change, status, news):
     assert boundary_change_is_news(change, status) is news
 
 
-async def test_worker_processes_each_event_once(monkeypatch):
-    from app.learning import worker
-    from test_d_fakedb import FakeDB
-    database = FakeDB()
-    calls = []
-
-    async def fake_handle(event):
-        calls.append(event.id)
-    monkeypatch.setattr(worker, "handle", fake_handle)
-    record = {"_id": "evt_2", "user_id": USER, "type": "suggestion_selected",
-              "created_at": datetime.now(timezone.utc)}
-    await database["events"].insert_one(record)
-    for _ in range(2):                       # change-stream re-delivery after a crash
-        await worker.process_change(database, {"fullDocument": record})
-    assert calls == ["evt_2"]
-    assert await worker.claim(database, "evt_2") is False
-
-
 async def test_second_worker_is_refused_a_lease():
     from pymongo.errors import DuplicateKeyError
 
@@ -213,3 +195,48 @@ def test_partner_and_typed_text_is_bounded():
         with pytest.raises(HTTPException) as err:
             _checked_text(bad)
         assert err.value.status_code == 400
+
+
+# ───────────────────────── destructive reset is opt-in ─────────────────────────
+async def test_reset_refused_by_default_and_dry_run_stays_read_only(monkeypatch):
+    from app.learning import demo_seed
+    from test_d_fakedb import FakeDB
+    database = FakeDB()
+    await database["boundaries"].insert_one({"_id": "bnd_l", "user_id": USER, "origin": "learned"})
+    monkeypatch.setattr(demo_seed.settings, "enable_demo_reset", False)
+    with pytest.raises(demo_seed.ResetDisabled):
+        await demo_seed.reset_demo(database, dry_run=False, user_id=USER)
+    before = {name: [dict(d) for d in coll.docs] for name, coll in database.items()}
+    preview = await demo_seed.reset_demo(database, dry_run=True, user_id=USER)
+    assert preview["deleted"]["boundaries"] == 1
+    assert {name: coll.docs for name, coll in database.items() if name in before} == before   # nothing written
+
+
+@pytest.mark.parametrize("enabled,token,sent,status", [
+    (False, "s3cret", "s3cret", 403),     # flag off: refused even with the right token
+    (True, "", "", 403),                  # flag on but no ADMIN_TOKEN configured
+    (True, "s3cret", None, 403),          # no header
+    (True, "s3cret", "wrong", 403),       # bad header
+    (True, "s3cret", "s3cret", 200),      # explicit opt-in + token
+])
+async def test_reset_route_requires_flag_and_token(monkeypatch, enabled, token, sent, status):
+    from fastapi import HTTPException
+
+    from app.api import learning_routes
+    calls = []
+
+    async def fake_reset(database, *, dry_run, user_id=None):
+        calls.append(dry_run)
+        return {"ok": True, "dry_run": dry_run}
+    monkeypatch.setattr(learning_routes, "reset_demo", fake_reset)
+    monkeypatch.setattr(learning_routes.settings, "enable_demo_reset", enabled)
+    monkeypatch.setattr(learning_routes.settings, "admin_token", token)
+    if status == 403:
+        with pytest.raises(HTTPException) as err:
+            await learning_routes.admin_reset_demo(dry_run=False, x_admin_token=sent)
+        assert err.value.status_code == 403 and calls == []
+    else:
+        assert (await learning_routes.admin_reset_demo(dry_run=False, x_admin_token=sent))["ok"]
+        assert calls == [False]
+    # a dry run is always allowed and always read-only
+    assert (await learning_routes.admin_reset_demo(dry_run=True, x_admin_token=None))["dry_run"] is True

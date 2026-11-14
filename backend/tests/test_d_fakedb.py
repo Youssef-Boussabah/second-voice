@@ -53,6 +53,9 @@ def _match_value(value: Any, cond: Any) -> bool:
             elif op == "$lt":
                 if value is _MISSING or value is None or not value < arg:
                     return False
+            elif op == "$lte":
+                if value is _MISSING or value is None or not value <= arg:
+                    return False
             else:
                 raise NotImplementedError(op)
         return True
@@ -132,24 +135,67 @@ class FakeCollection:
         self.docs.append(copy.deepcopy(doc))
         return _Result(inserted_id=doc["_id"])
 
+    @staticmethod
+    def _parent(d: dict, key: str) -> tuple[dict, str]:
+        """Dotted paths address nested fields, like Mongo."""
+        *parents, leaf = key.split(".")
+        for part in parents:
+            d = d.setdefault(part, {})
+        return d, leaf
+
     def _apply(self, d: dict, update: dict) -> None:
         for key, value in update.get("$set", {}).items():
-            target = d
-            *parents, leaf = key.split(".")
-            for part in parents:                      # dotted paths set nested fields, like Mongo
-                target = target.setdefault(part, {})
+            target, leaf = self._parent(d, key)
             target[leaf] = copy.deepcopy(value)
         for key in update.get("$unset", {}):
-            d.pop(key, None)
+            target, leaf = self._parent(d, key)
+            target.pop(leaf, None)
         for key, value in update.get("$inc", {}).items():
-            d[key] = d.get(key, 0) + value
+            target, leaf = self._parent(d, key)
+            target[leaf] = target.get(leaf, 0) + value
+        for key, value in update.get("$push", {}).items():
+            target, leaf = self._parent(d, key)
+            items = value.get("$each", []) if isinstance(value, dict) and "$each" in value else [value]
+            target[leaf] = list(target.get(leaf, [])) + copy.deepcopy(items)
+            if isinstance(value, dict) and "$slice" in value:
+                n = value["$slice"]
+                target[leaf] = target[leaf][n:] if n < 0 else target[leaf][:n]
+
+    def _upsert(self, flt: dict, update: dict) -> dict:
+        """Mongo upsert: seed the new doc from the filter's equality fields, then apply."""
+        doc = {k: copy.deepcopy(v) for k, v in flt.items()
+               if not k.startswith("$") and not (isinstance(v, dict) and any(x.startswith("$") for x in v))}
+        if any(d["_id"] == doc.get("_id") for d in self.docs):
+            from pymongo.errors import DuplicateKeyError
+            raise DuplicateKeyError(f"E11000 duplicate key {doc.get('_id')}")
+        self._apply(doc, update)
+        self.docs.append(doc)
+        return doc
 
     async def update_one(self, flt: dict, update: dict, upsert: bool = False):
         for d in self.docs:
             if matches(d, flt):
                 self._apply(d, update)
                 return _Result(matched_count=1, modified_count=1)
+        if upsert:
+            self._upsert(flt, update)
+            return _Result(matched_count=0, modified_count=0, upserted_id=flt.get("_id"))
         return _Result(matched_count=0, modified_count=0)
+
+    async def find_one_and_update(self, flt: dict, update: dict, return_document=None, upsert: bool = False):
+        """Atomic in this single-threaded fake: match, apply, return the AFTER image (or None)."""
+        for d in self.docs:
+            if matches(d, flt):
+                self._apply(d, update)
+                return copy.deepcopy(d)
+        return copy.deepcopy(self._upsert(flt, update)) if upsert else None
+
+    async def delete_one(self, flt: dict):
+        for index, d in enumerate(self.docs):
+            if matches(d, flt):
+                del self.docs[index]
+                return _Result(deleted_count=1)
+        return _Result(deleted_count=0)
 
     async def replace_one(self, flt: dict, replacement: dict):
         for index, d in enumerate(self.docs):

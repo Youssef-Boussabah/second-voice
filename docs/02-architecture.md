@@ -1,5 +1,12 @@
 # 02: Architecture
 
+> **Shipped-state note (release-final, Nov 14 2026):** this is the planning-time design. Differences in
+> the shipped code: no LangGraph/LangSmith (plain async stages; turns re-read from Atlas give the
+> crash-safety), no client-side VAD (the tablet uses browser dictation to fill a text box; Scribe is only
+> behind `POST /api/utterances/audio`), speaker ID is off (manual partner choice), the LLM is Nebius
+> (Qwen3-30B + optional hedge, GLM for summaries), and blocked memories are also withheld from the prompt
+> (`guard.filter_context`). See README "What is real and what isn't".
+
 ## System diagram
 ```
  ┌──────────────────────── Tablet web app (Lane C, React) ────────────────────────┐

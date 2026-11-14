@@ -291,7 +291,9 @@ def build_prompt(state: PipelineState, avoid: list[str]) -> str:
 # ───────────────────────── helpers ─────────────────────────
 async def _embed_query(text: str) -> list[float] | None:
     try:
-        return await embed_query(text)
+        # DECISION: 1.2 s cap. Voyage answers in ~0.3-0.6 s; when the free tier returns 429 the
+        # final stage must not wait the full retry budget (text search still runs).
+        return await embed_query(text, timeout_s=1.2)
     except Exception as e:  # noqa: BLE001  no embeddings → skip vector stages, keep going
         log.warning("query embedding unavailable (%s); vector stages skipped", str(e)[:160])
         return None

@@ -7,7 +7,7 @@ import { PartnerPicker } from "./PartnerBar";
 const DEMO_LINES: Record<string, string[]> = {
   per_dana: ["Hi Maya! Here for your refill?", "Any side effects with the new generic?"],
   per_mike: ["Hey Maya! How've you been?", "Anything new?"],
-  per_sam: ["Hey you! How are you doing?", "Anything new?"],
+  per_sam: ["Hi Grandma! We won on Saturday!", "Anything new?"],
 };
 
 /** "What did they say?" Typed or dictated partner speech → POST /api/utterances/text. */

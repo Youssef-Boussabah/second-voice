@@ -1,4 +1,5 @@
 // In-browser fake of the Second Voice backend (REST + WS), used when VITE_USE_MOCKS=true.
+// Personas follow docs/01-product.md (Maya Chen 58; Dana = pharmacist at Shoppers; Sam = grandson, 16, hockey; Mike = neighbour).
 // It mirrors the contracts exactly and runs a tiny deterministic guard so the privacy demo works offline.
 import type {
   Boundary, Candidate, Memory, PersonContext, PersonOut, Relationship, Scoreboard, Session,
@@ -13,9 +14,9 @@ const now = () => new Date().toISOString();
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const PEOPLE: PersonOut[] = [
-  { id: "per_dana", name: "Dana Okafor", relationship: "clinician", label: "Pharmacist", enrolled: true, last_seen: "2026-10-28T15:10:00Z" },
-  { id: "per_mike", name: "Mike Chen", relationship: "acquaintance", label: "Neighbour", enrolled: true, last_seen: "2026-11-02T18:30:00Z" },
-  { id: "per_sam", name: "Sam Rivera", relationship: "close_friend", label: "Old friend", enrolled: false, last_seen: "2026-11-09T20:00:00Z" },
+  { id: "per_dana", name: "Dana Okafor", relationship: "clinician", label: "Pharmacist at Shoppers", enrolled: true, last_seen: "2026-10-28T15:10:00Z" },
+  { id: "per_mike", name: "Mike Russo", relationship: "acquaintance", label: "Neighbour", enrolled: true, last_seen: "2026-11-02T18:30:00Z" },
+  { id: "per_sam", name: "Sam Chen", relationship: "family", label: "Grandson, 16", enrolled: false, last_seen: "2026-11-09T20:00:00Z" },
 ];
 
 const mem = (person_id: string, text: string, topics: Topic[], threads: { text: string; owner: "user" | "partner" }[], created_at: string): Memory => ({
@@ -27,13 +28,13 @@ const mem = (person_id: string, text: string, topics: Topic[], threads: { text: 
 const EPISODES: Record<string, Memory> = {
   per_dana: mem("per_dana", "Picked up the October refill. Dana suggested blister packs and said she'd order them in.", ["medication", "logistics"], [{ text: "Dana was checking on blister packs", owner: "partner" }], "2026-10-28T15:10:00Z"),
   per_mike: mem("per_mike", "Chatted about the Leafs game and Mike's new puppy, Biscuit.", ["small_talk", "hobbies"], [{ text: "Ask how Biscuit's training is going", owner: "user" }], "2026-11-02T18:30:00Z"),
-  per_sam: mem("per_sam", "Sam visited; talked about the new meds and planning a trip to the lake in spring.", ["health", "emotions_positive"], [{ text: "Plan the lake trip dates", owner: "user" }], "2026-11-09T20:00:00Z"),
+  per_sam: mem("per_sam", "Sam came by after hockey practice. Maya teased him about his helmet hair; he has a big game Saturday.", ["hobbies", "family_news", "humour"], [{ text: "Ask Sam about Saturday's game", owner: "user" }], "2026-11-09T20:00:00Z"),
 };
 
 const PHRASES: Record<string, string[]> = {
   per_dana: ["Same as last time, please", "Thanks Dana"],
   per_mike: ["Go Leafs!", "How's Biscuit?"],
-  per_sam: ["Love you, Sam", "You always make me laugh"],
+  per_sam: ["Proud of you, bud", "Helmet hair again, bud?"],
 };
 
 let boundaries: Boundary[] = [
@@ -61,6 +62,8 @@ type Draft = [string, Topic[]];
 function draftsFor(text: string, person: PersonOut | undefined): Draft[] {
   const t = text.toLowerCase();
   const rel = person?.relationship;
+  if (/game|hockey|won|goal|practice|score/.test(t))
+    return [["Way to go, bud! Did you score?", ["hobbies", "emotions_positive"]], ["Proud of you, bud.", ["emotions_positive"]], ["Wish I'd been there to see it", ["emotions_positive"]], ["Was your coach happy?", ["hobbies"]], ["Tell me everything", ["small_talk"]]];
   if (/refill|prescription|pick.?up/.test(t))
     return [["Yes please, same as October", ["medication", "logistics"]], ["Did the blister packs come in?", ["medication", "logistics"]], ["The new generic has been fine so far", ["medication", "health"]], ["Thanks Dana, how's your week going?", ["small_talk"]], ["Can I pay on my card again?", ["finances"]], ["Not today, maybe Friday", ["logistics"]]];
   if (/side effect|dizzy|generic|dose|meds?\b|medication/.test(t))

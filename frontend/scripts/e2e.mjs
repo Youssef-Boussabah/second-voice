@@ -52,11 +52,16 @@ const line = (t) => page.getByText(`“${t}”`);
 
 await page.goto(URL);
 await person("Dana").waitFor();
+// personas per docs/01-product.md: Sam is Maya's grandson (family), never a sibling/friend
+{
+  const picker = await page.getByRole("radiogroup").innerText();
+  if (!/Sam\s+Grandson, 16/.test(picker) || /brother|sibling|friend/i.test(picker)) fail(`Sam persona wrong: ${picker.replace(/\s+/g, " ")}`);
+}
 
 await beat("0:20 Dana: 'Here for your refill?'", async () => {
   await tap(person("Dana")); await tap(line("Hi Maya! Here for your refill?"));
   const c = await cards();
-  await expectText(/Dana Okafor · Pharmacist · last talked Oct 28/, "Dana header");
+  await expectText(/Dana Okafor · Pharmacist at Shoppers · last talked Oct 28/, "Dana header");
   await expectText(/Dana was checking on blister packs/, "blister-pack thread chip");
   if (!c.includes("Yes please, same as October") || !c.includes("Did the blister packs come in?")) fail(`Dana cards: ${c.join(" / ")}`);
 });
@@ -118,9 +123,15 @@ await beat("Rehearsal 2 starts clean (Mike sees meds card again)", async () => {
   const c = await cards();
   if (!c.includes("Honestly the new meds have been rough.")) fail(`after reset: ${c.join(" / ")}`);
 });
+await beat("Sam (grandson) gets hockey replies", async () => {
+  await tap(person("Sam")); await tap(line("Hi Grandma! We won on Saturday!"));
+  await expectText(/Sam Chen · Grandson, 16/, "Sam header");
+  const c = await cards();
+  if (!c.some((t) => /bud/.test(t))) fail(`Sam cards lack "bud": ${c.join(" / ")}`);
+});
 await beat("End chat → memory saved", async () => {
   await tap(page.getByRole("button", { name: /End conversation/ }));
-  await page.getByText(/Remembered your chat with Mike/).waitFor({ timeout: 3000 });
+  await page.getByText(/Remembered your chat with (Mike|Sam)/).waitFor({ timeout: 3000 });
 }, 1);
 
 console.log(`${tag} console: ${errs.length ? errs.join("\n") : "clean"}`);

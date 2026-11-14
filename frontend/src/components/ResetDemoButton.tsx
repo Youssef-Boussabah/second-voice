@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { Button } from "./ui";
+import { ENABLE_RESET } from "../config";
 
 /** Re-seeds the demo (POST /api/admin/reset-demo). Second tap within 4 s confirms. */
 export default function ResetDemoButton({ className = "" }: { className?: string }) {
@@ -12,6 +13,7 @@ export default function ResetDemoButton({ className = "" }: { className?: string
     const t = setTimeout(() => setArmed(false), 4000);
     return () => clearTimeout(t);
   }, [armed]);
+  if (!ENABLE_RESET) return null;
   return (
     <Button
       tone={armed ? "primary" : "ghost"}

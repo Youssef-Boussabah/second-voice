@@ -60,6 +60,7 @@ interface State {
 }
 
 let ws: WsHandle | null = null;
+let lingering: WsHandle | null = null; // ended session socket, kept open for the memory.updated(episode) event
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -143,7 +144,11 @@ export const useStore = create<State>((set, get) => {
         break;
       case "memory.updated": {
         const p = get().people.find((x) => x.id === m.data.person_id);
-        get().pushToast({ tone: "memory", title: p ? `Remembered your chat with ${p.name.split(" ")[0]}` : "Memory updated" });
+        if (m.data.kind === "episode") {
+          get().pushToast({ tone: "memory", title: p ? `Remembered your chat with ${p.name.split(" ")[0]}` : "Conversation remembered" });
+          lingering?.close(); // got the end-of-chat summary; no need to keep the old socket
+          lingering = null;
+        }
         if (get().personId === m.data.person_id) void loadContext(m.data.person_id);
         break;
       }
@@ -285,10 +290,13 @@ export const useStore = create<State>((set, get) => {
     async endConversation() {
       stopSpeaking();
       const s = get().session;
-      // keep the old socket briefly so the end-of-session memory.updated toast still arrives
-      const old = ws;
+      // The worker summarises the ended chat asynchronously; keep the old socket open until its
+      // memory.updated(episode) arrives (closed in handleWs) or 60 s pass.
+      lingering?.close();
+      lingering = ws;
       ws = null;
-      setTimeout(() => old?.close(), 5000);
+      const mine = lingering;
+      setTimeout(() => { if (lingering === mine) { lingering?.close(); lingering = null; } }, 60000);
       set({ session: null, turns: [], suggestions: null, wsStatus: "idle", unknownUtteranceId: null });
       if (s) await api.endSession(s._id).catch(fail("end the conversation"));
     },

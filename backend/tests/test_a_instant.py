@@ -13,7 +13,7 @@ from pymongo import MongoClient  # noqa: E402
 
 from app import db  # noqa: E402
 from app.config import settings  # noqa: E402
-from app.contracts import Memory, SpeakerMatch, Utterance  # noqa: E402
+from app.contracts import Memory, SpeakerMatch, Utterance, utcnow  # noqa: E402
 from app.graph import instant, pipeline  # noqa: E402
 from app.realtime import hub  # noqa: E402
 
@@ -78,7 +78,7 @@ def seeded():
                              "scope": {"type": "relationship", "value": "acquaintance"},
                              "topics": ["health", "medication", "distress"], "action": "block"})
     yield d
-    for c in ("people", "memories", "boundaries", "utterances", "suggestion_sets"):
+    for c in ("people", "memories", "boundaries", "utterances", "suggestion_sets", "events", "sessions"):
         d[c].delete_many({"user_id": UID})
     mc.close()
 
@@ -167,3 +167,34 @@ def test_near_duplicate_neutral_replies_are_skipped():
     out = instant.rank_quick_replies("Can you hear me?", [_ph("Give me a second to type that.", uses=2)], None)
     texts = [c.text for c in out]
     assert "Give me a second to type that." in texts and "Give me a sec to type." not in texts
+
+
+async def test_immediate_select_after_emit_never_404s(seeded, monkeypatch):
+    """Regression: a tap at the exact moment a set becomes visible must succeed.
+    We 'tap' from inside hub.emit itself (zero delay, before the pipeline continues)."""
+    from app.api import core_routes
+    from app.contracts import SelectIn
+
+    db._client = None
+    sid = f"ses_tap_{SUFFIX}"
+    await db.db()[db.SESSIONS].insert_one({"_id": sid, "user_id": UID, "person_ids": [MIKE],
+                                           "status": "active", "started_at": utcnow()})
+    taps: list[tuple[str, str]] = []
+
+    async def tapping_emit(type_, session_id, data, *, all_sessions=False):
+        if type_ != "suggestions.ready":
+            return
+        cand = data.candidates[0]
+        out = await core_routes.select_suggestion(          # raises HTTPException(404) on a race
+            data.id, SelectIn(candidate_id=cand.id, event_id=f"evt_tap_{data.stage}_{SUFFIX}"))
+        taps.append((data.stage, out.text_to_speak))
+
+    monkeypatch.setattr(hub, "emit", tapping_emit)
+    utt = Utterance(session_id=sid, user_id=UID, text="Hey Maya, did you catch the Leafs game?",
+                    source="text", speaker=SpeakerMatch(kind="partner", person_id=MIKE, method="forced"))
+    await db.db()[db.UTTERANCES].insert_one(utt.to_mongo())
+    await pipeline.run(utt)
+    events = await db.db()[db.EVENTS].count_documents({"session_id": sid, "type": "suggestion_selected"})
+    await db.close()
+    assert [stage for stage, _ in taps] == ["instant", "final"]
+    assert all(text for _, text in taps) and events == 2

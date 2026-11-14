@@ -1,0 +1,29 @@
+# Core
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+httpx>=0.27
+numpy>=1.26
+pymongo>=4.13            # includes AsyncMongoClient
+
+# Agents + memory tooling
+langgraph>=0.6
+langgraph-checkpoint-mongodb>=0.2
+langsmith>=0.2
+
+# Model providers
+anthropic>=0.40
+openai>=1.50
+voyageai>=0.3
+elevenlabs>=2.0
+
+# Lane B: speaker ID (install torch CPU wheels FIRST:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu )
+speechbrain>=1.0
+soundfile>=0.12
+
+# Tests
+pytest>=8
+pytest-asyncio>=0.23

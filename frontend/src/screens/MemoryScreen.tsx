@@ -33,7 +33,12 @@ function PersonMemory() {
     if (!pid) return;
     setCtx(null);
     setErr(null);
-    api.personContext(pid).then(setCtx).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
+    // live context takes ~2 s; a slower response for the previously selected person must not land under this tab
+    let alive = true;
+    api.personContext(pid)
+      .then((c) => alive && setCtx(c))
+      .catch((e: unknown) => alive && setErr(e instanceof Error ? e.message : String(e)));
+    return () => { alive = false; };
   }, [pid]);
 
   return (

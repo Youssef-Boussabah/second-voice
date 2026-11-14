@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { font-family: "Atkinson Hyperlegible", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+* { -webkit-touch-callout: none; }
+input, textarea { -webkit-touch-callout: default; }
+
+/* Visible, thick focus ring for switch/keyboard users */
+:focus-visible { outline: 4px solid #B4532A; outline-offset: 3px; border-radius: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

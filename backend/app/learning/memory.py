@@ -5,7 +5,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.contracts import EpisodeSummary, Memory, OpenThread, RetrievedContext, new_id
 from app.db import MEMORIES, PEOPLE, db
-from app.embeddings import embed
+from app.learning.safe_embed import embed_document_or_none
 from app.learning.boundaries import get_active_boundaries
 from app.learning.demo_seed import LEARNED_TAG
 
@@ -17,10 +17,13 @@ async def save_episode(user_id: str, person_id: str, session_id: str, summary: E
     memory = Memory(
         id=memory_id or new_id("mem"), user_id=user_id, person_id=person_id, kind="episode",
         text=summary.summary, topics=summary.topics, open_threads=summary.open_threads_new,
-        session_id=session_id, embedding=(await embed([summary.summary], "document"))[0], created_at=now,
+        session_id=session_id, embedding=await embed_document_or_none(summary.summary), created_at=now,
     )
+    record = memory.to_mongo() | LEARNED_TAG
+    if record.get("embedding") is None:
+        record.pop("embedding")  # missing (not null) so the backfill and $vectorSearch both skip/fill it
     try:
-        await db()[MEMORIES].insert_one(memory.to_mongo() | LEARNED_TAG)
+        await db()[MEMORIES].insert_one(record)
     except DuplicateKeyError:
         return memory.id
     resolved = set(summary.threads_resolved_ids)

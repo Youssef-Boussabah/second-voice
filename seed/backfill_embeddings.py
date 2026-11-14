@@ -1,4 +1,4 @@
-"""Backfill real Voyage vectors only onto lane-d owned seed memories."""
+"""Backfill real Voyage vectors onto lane-d owned memories (seed + learned) that lack one."""
 from __future__ import annotations
 
 import argparse
@@ -15,6 +15,10 @@ from app.db import MEMORIES, db
 from app.embeddings import embed
 
 
+# lane-d seed docs plus lane-d learned docs (episodes/phrases saved while Voyage was down)
+OWNED = {"$or": [{"seed_source": "lane-d"}, {"written_by": "lane-d"}]}
+
+
 def missing_embedding_filter() -> dict:
     return {"$or": [{"embedding": {"$exists": False}}, {"embedding": None}]}
 
@@ -28,9 +32,9 @@ async def main(dry_run: bool) -> None:
         raise SystemExit(f"Expected Lane A's 1024-D memories index, configured dimension is {settings.embed_dim}. No writes were made.")
 
     collection = db()[MEMORIES]
-    query = {"seed_source": "lane-d", **missing_embedding_filter()}
+    query = {"$and": [OWNED, missing_embedding_filter()]}
     count = await collection.count_documents(query)
-    print(f"memories: lane-d missing embeddings={count}; dry_run={dry_run}; model={settings.embed_model}; dimensions={settings.embed_dim}")
+    print(f"memories: lane-d (seed+learned) missing embeddings={count}; dry_run={dry_run}; model={settings.embed_model}; dimensions={settings.embed_dim}")
     if dry_run or count == 0:
         return
 
@@ -61,7 +65,7 @@ async def write_batch(collection, batch: list[dict]) -> None:
         raise RuntimeError("Voyage returned an unexpected vector count or dimension; refusing writes.")
     for record, vector in zip(batch, vectors, strict=True):
         result = await collection.update_one(
-            {"_id": record["_id"], "seed_source": "lane-d", **missing_embedding_filter()},
+            {"$and": [{"_id": record["_id"]}, OWNED, missing_embedding_filter()]},
             {"$set": {"embedding": vector}},
         )
         if result.modified_count:

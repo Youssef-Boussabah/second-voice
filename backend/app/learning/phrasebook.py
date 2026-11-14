@@ -12,7 +12,7 @@ import numpy as np
 
 from app.contracts import Event, new_id
 from app.db import MEMORIES, SUGGESTION_SETS, db
-from app.embeddings import embed
+from app.learning.safe_embed import embed_document_or_none
 from app.learning.demo_seed import LEARNED_TAG
 
 log = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ async def learn_phrase(evt: Event) -> str | None:
         log.info("phrase skipped evt=%s person=%s (no partner scope)", evt.id, person_id)
         return None
 
-    vector = (await embed([text], "document"))[0]
+    vector = await embed_document_or_none(text)
     collection = db()[MEMORIES]
     existing = await collection.find({
         "user_id": evt.user_id, "person_id": person_id, "kind": "phrase", "status": "active",
@@ -64,7 +64,7 @@ async def learn_phrase(evt: Event) -> str | None:
             match = memory
             break
         prior = memory.get("embedding") or []
-        if len(prior) != len(vector):
+        if vector is None or len(prior) != len(vector):
             continue
         denom = float(np.linalg.norm(vector) * np.linalg.norm(prior)) or 1.0
         if float(np.dot(vector, prior)) / denom >= SIMILARITY_THRESHOLD:
@@ -79,11 +79,14 @@ async def learn_phrase(evt: Event) -> str | None:
                  (time.perf_counter() - started) * 1000)
         return match["_id"]
     memory_id = new_id("mem")
-    await collection.insert_one({
+    document = {
         "_id": memory_id, "user_id": evt.user_id, "person_id": person_id,
         "kind": "phrase", "status": "active", "text": text, "topics": [str(getattr(t, "value", t)) for t in evt.topics],
         "uses": 1, "last_used": now, "origin": ORIGIN[_event_type(evt)], "source_event_id": evt.id,
         "embedding": vector, "created_at": now, **LEARNED_TAG,
-    })
+    }
+    if vector is None:
+        document.pop("embedding")
+    await collection.insert_one(document)
     log.info("phrase new mem=%s person=%s %dms", memory_id, person_id, (time.perf_counter() - started) * 1000)
     return memory_id

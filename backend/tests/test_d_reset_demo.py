@@ -27,6 +27,11 @@ async def _state(monkeypatch):
     assert learned and learned.status == "active"
     await database["sessions"].insert_one({"_id": "ses_demo1", "user_id": DEMO})
     await database["events"].insert_one({"_id": "evt_demo1", "user_id": DEMO, "type": "session_started"})
+    # legacy (pre-tag) lane-d learned docs are still cleared by provenance
+    await database["boundaries"].insert_one({"_id": "bnd_legacy", "user_id": DEMO, "origin": "learned",
+                                             "status": "active", "scope": {"type": "relationship", "value": "acquaintance"}})
+    await database["memories"].insert_one({"_id": "mem_legacy", "user_id": DEMO, "person_id": "per_dana",
+                                           "kind": "phrase", "origin": "reply_typed", "text": "legacy"})
     # things reset must never touch
     await database["memories"].insert_one({"_id": "mem_laneA", "user_id": DEMO, "person_id": "per_dana",
                                            "kind": "episode", "text": "written by someone else"})
@@ -45,14 +50,14 @@ async def test_dry_run_reports_and_writes_nothing(monkeypatch):
     before = {name: [dict(d) for d in coll.docs] for name, coll in database.items()}
     result = await demo_seed.reset_demo(database, dry_run=True, user_id=DEMO)
     assert result["ok"] and result["dry_run"]
-    assert result["deleted"] == {"memories": 1, "boundaries": 1, "events": 1, "sessions": 1}
+    assert result["deleted"] == {"memories": 2, "boundaries": 2, "events": 1, "sessions": 1}
     assert {name: coll.docs for name, coll in database.items()} == before
 
 
 async def test_reset_deletes_only_learned_and_demo_docs_then_restores_seed(monkeypatch):
     database = await _state(monkeypatch)
     result = await demo_seed.reset_demo(database, dry_run=False, user_id=DEMO)
-    assert result["deleted"] == {"memories": 1, "boundaries": 1, "events": 1, "sessions": 1}
+    assert result["deleted"] == {"memories": 2, "boundaries": 2, "events": 1, "sessions": 1}
     memory_ids = {d["_id"] for d in database["memories"].docs}
     assert {"mem_laneA", "mem_other", "mem_ph_sam_bud"} <= memory_ids
     assert {d["_id"] for d in database["sessions"].docs} == {"ses_other"}

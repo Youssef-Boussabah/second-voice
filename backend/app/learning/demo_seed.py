@@ -7,7 +7,7 @@ Ownership tags:
 
 Reset only ever touches the demo user (`settings.demo_user_id`) and never deletes a
 document carrying another lane's tag. It deletes:
-  memories/boundaries   written_by="lane-d", no seed_source       (learned after seeding)
+  memories/boundaries   written_by="lane-d" (or legacy lane-d learned provenance), no seed_source
   events                no seed_source                            (demo session events)
   sessions              all of the demo user's sessions           (demo sessions)
 then re-applies the seed, restoring each lane-d seed document to its JSON state while
@@ -93,11 +93,17 @@ async def apply_seed(database, *, dry_run: bool) -> dict[str, dict[str, int]]:
     return report
 
 
+# Provenance of lane-d learning writes made before the `written_by` tag existed: only
+# learning/boundaries.py writes origin="learned" boundaries and only learning/phrasebook.py
+# writes phrases with these origins.
+LEGACY_PHRASE_ORIGINS = ["selected", "edited", "typed", "suggestion_selected", "suggestion_edited", "reply_typed"]
+
+
 def reset_filters(user_id: str) -> dict[str, dict[str, Any]]:
-    learned = {"user_id": user_id, **LEARNED_TAG, "seed_source": {"$exists": False}}
+    owner = {"user_id": user_id, "seed_source": {"$exists": False}}
     return {
-        MEMORIES: dict(learned),
-        BOUNDARIES: dict(learned),
+        MEMORIES: owner | {"$or": [LEARNED_TAG, {"kind": "phrase", "origin": {"$in": LEGACY_PHRASE_ORIGINS}}]},
+        BOUNDARIES: owner | {"$or": [LEARNED_TAG, {"origin": "learned"}]},
         EVENTS: {"user_id": user_id, "seed_source": {"$exists": False}},
         SESSIONS: {"user_id": user_id, "seed_source": {"$exists": False}},
     }

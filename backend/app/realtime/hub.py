@@ -25,6 +25,7 @@ _tasks: list[asyncio.Task] = []
 
 
 async def startup() -> None:
+    _tasks.append(asyncio.create_task(_warm(), name="warmup"))
     if not settings.use_change_streams:
         log.info("change streams disabled; WS uses direct broadcast only")
         return
@@ -88,6 +89,35 @@ def emit_boundary_direct_needed() -> bool:
     """Write sites that change boundaries in-process call emit() themselves only when
     change streams are off (otherwise the tail delivers it)."""
     return not settings.use_change_streams
+
+
+async def _warm() -> None:
+    """Background warm-up (never blocks startup): Atlas connection pool + LLM model check."""
+    import asyncio as _aio
+    import time as _time
+
+    from app import db, llm
+    from app.memory import retrieval
+
+    await db.warmup()
+    # Run the instant stage's exact queries once per known person (query plans + server cache),
+    # so the first real utterance after a restart is as fast as the rest.
+    t = _time.perf_counter()
+    try:
+        uid = settings.demo_user_id
+        people = await retrieval.list_people(uid)
+        for pid in [None, *[p.id for p in people]]:
+            await _aio.gather(retrieval.load_person(pid), retrieval.active_boundaries(uid),
+                              retrieval.saved_phrases(uid, pid))
+        log.info("instant-path warmup %d people %d ms", len(people), (_time.perf_counter() - t) * 1000)
+    except Exception as e:  # noqa: BLE001
+        log.warning("instant-path warmup failed: %s", str(e)[:200])
+    if settings.llm_provider == "nebius" and not settings.mock_llm and settings.nebius_api_key:
+        try:
+            for m in {settings.nebius_model, settings.nebius_summary_model or settings.nebius_model}:
+                await llm.resolve_nebius_model(m)
+        except Exception as e:  # noqa: BLE001
+            log.warning("llm warmup failed: %s", str(e)[:200])
 
 
 # ───────────────────────── change-stream tails ─────────────────────────

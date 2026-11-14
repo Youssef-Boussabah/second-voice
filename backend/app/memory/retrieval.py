@@ -133,6 +133,18 @@ async def text_search(user_id: str, person_id: str, kind: str, text: str,
         return []
 
 
+async def saved_phrases(user_id: str, person_id: str | None, limit: int = 30) -> list[Memory]:
+    """Instant stage: the user's phrases for this person ∪ global, by plain indexed query.
+    No embedding needed. Uses the {user_id, person_id, kind, created_at} index (equality on
+    user_id + $in on person_id + equality on kind); ranked in Python by instant.rank_quick_replies."""
+    pids = [person_id, "global"] if person_id else ["global"]
+    docs = await (db.db()[db.MEMORIES]
+                  .find({"user_id": user_id, "person_id": {"$in": pids}, "kind": "phrase",
+                         "status": "active"}, {"embedding": 0})
+                  .sort("created_at", -1).limit(limit).to_list(limit))
+    return _parse(Memory, docs)
+
+
 async def phrase_candidates(user_id: str, person_id: str | None, qvec: list[float],
                             limit: int = 6) -> list[Memory]:
     """Instant stage: the user's own phrases for this person ∪ global, nearest to the utterance."""

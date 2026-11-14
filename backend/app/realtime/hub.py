@@ -1,24 +1,46 @@
-"""Lane A: WebSocket fan-out + change-stream tails. See docs/04-api-contracts.md §2."""
+"""Lane A: WebSocket fan-out + change-stream tails. See docs/04-api-contracts.md §2.
+
+# DECISION: in-process writes (suggestion_sets, utterances: written by this API process,
+# including Lane B's voice routes via pipeline.on_partner_utterance) are pushed with a direct
+# `emit()` from the write site. That keeps them low-latency and works without change streams.
+# Cross-process writes (boundaries + memories, written by Lane D's worker) arrive via change
+# streams when USE_CHANGE_STREAMS=true. That way no message is ever delivered twice.
+"""
+from __future__ import annotations
+
+import asyncio
 import logging
 from collections import defaultdict
+from typing import Any
 
 from fastapi import WebSocket
 
-from app.contracts import WSMessage
+from app.config import settings
+from app.contracts import Boundary, WSMessage
 
 log = logging.getLogger(__name__)
 
 _connections: dict[str, set[WebSocket]] = defaultdict(set)
+_tasks: list[asyncio.Task] = []
 
 
 async def startup() -> None:
-    """TODO(Lane A): if settings.use_change_streams, start asyncio tasks tailing
-    suggestion_sets / boundaries / utterances / memories and call broadcast()."""
-    return None
+    if not settings.use_change_streams:
+        log.info("change streams disabled; WS uses direct broadcast only")
+        return
+    _tasks.append(asyncio.create_task(_tail("boundaries", _on_boundary), name="tail-boundaries"))
+    _tasks.append(asyncio.create_task(_tail("memories", _on_memory), name="tail-memories"))
 
 
 async def shutdown() -> None:
-    return None
+    for t in _tasks:
+        t.cancel()
+    for t in _tasks:
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    _tasks.clear()
 
 
 def register(session_id: str, ws: WebSocket) -> None:
@@ -27,6 +49,12 @@ def register(session_id: str, ws: WebSocket) -> None:
 
 def unregister(session_id: str, ws: WebSocket) -> None:
     _connections[session_id].discard(ws)
+    if not _connections[session_id]:
+        _connections.pop(session_id, None)
+
+
+def connection_count() -> int:
+    return sum(len(c) for c in _connections.values())
 
 
 async def broadcast(msg: WSMessage, *, all_sessions: bool = False) -> None:
@@ -43,3 +71,76 @@ async def broadcast(msg: WSMessage, *, all_sessions: bool = False) -> None:
             log.warning("dropping dead websocket")
             for conns in _connections.values():
                 conns.discard(ws)
+
+
+async def emit(type_: str, session_id: str | None, data: Any, *, all_sessions: bool = False) -> None:
+    """Build + broadcast a WSMessage. Accepts pydantic models or dicts. Never raises."""
+    try:
+        if hasattr(data, "model_dump"):
+            data = data.model_dump(mode="json", by_alias=True)
+        await broadcast(WSMessage(type=type_, session_id=session_id, data=data),
+                        all_sessions=all_sessions)
+    except Exception:  # noqa: BLE001
+        log.exception("emit %s failed", type_)
+
+
+def emit_boundary_direct_needed() -> bool:
+    """Write sites that change boundaries in-process call emit() themselves only when
+    change streams are off (otherwise the tail delivers it)."""
+    return not settings.use_change_streams
+
+
+# ───────────────────────── change-stream tails ─────────────────────────
+async def _tail(coll_name: str, handler) -> None:
+    from app import db
+
+    pipeline = [{"$match": {"$or": [
+        {"fullDocument.user_id": settings.demo_user_id},
+        {"operationType": "delete"},
+    ]}}]
+    backoff = 1.0
+    resume_token = None
+    while True:
+        try:
+            coll = db.db()[coll_name]
+            async with await coll.watch(pipeline, full_document="updateLookup",
+                                        resume_after=resume_token) as stream:
+                log.info("tailing change stream on %s", coll_name)
+                backoff = 1.0
+                async for change in stream:
+                    resume_token = stream.resume_token
+                    try:
+                        await handler(change)
+                    except Exception:  # noqa: BLE001
+                        log.exception("change handler %s failed", coll_name)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("change stream %s dropped (%s); retry in %.0fs", coll_name, str(e)[:200], backoff)
+            resume_token = None if "resume" in str(e).lower() else resume_token
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+
+
+async def _on_boundary(change: dict[str, Any]) -> None:
+    doc = change.get("fullDocument")
+    if not doc:
+        return
+    try:
+        b = Boundary.model_validate(doc)
+    except Exception:  # noqa: BLE001
+        log.warning("malformed boundary in change stream %s", doc.get("_id"))
+        return
+    status = b.status if isinstance(b.status, str) else b.status.value
+    if status == "active":
+        await emit("boundary.activated", None, b.model_dump(mode="json", by_alias=True), all_sessions=True)
+    elif status == "proposed":
+        await emit("boundary.proposed", None, b.model_dump(mode="json", by_alias=True), all_sessions=True)
+
+
+async def _on_memory(change: dict[str, Any]) -> None:
+    doc = change.get("fullDocument")
+    if not doc:
+        return
+    await emit("memory.updated", None, {"person_id": doc.get("person_id"), "kind": doc.get("kind")},
+               all_sessions=True)

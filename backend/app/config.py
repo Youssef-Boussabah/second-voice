@@ -17,11 +17,22 @@ class Settings(BaseSettings):
     demo_user_id: str = "usr_maya"
 
     # LLM
-    llm_provider: str = "anthropic"            # anthropic | openai
+    llm_provider: str = "nebius"               # nebius | anthropic | openai
     suggest_model: str = "claude-haiku-5-5"
     summary_model: str = "claude-sonnet-5-5"
     openai_suggest_model: str = "gpt-5-mini"   # DECISION: set to whatever your OpenAI key has
     anthropic_api_key: str = ""
+    # Nebius Token Factory (OpenAI-compatible). Model is verified against /v1/models at first use;
+    # if it isn't listed, llm.py picks the first available entry of nebius_fallback_models.
+    nebius_api_key: str = ""
+    nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1/"
+    nebius_model: str = "zai-org/GLM-5.3-Flash"
+    nebius_summary_model: str = ""             # empty → same as nebius_model
+    nebius_fallback_models: str = (
+        "zai-org/GLM-4.5-Air,Qwen/Qwen3-30B-A3B-Instruct-2507,meta-llama/Llama-3.3-70B-Instruct,"
+        "openai/gpt-oss-20b,Qwen/Qwen3-235B-A22B-Instruct-2507,deepseek-ai/DeepSeek-V3-0324"
+    )
+    llm_timeout_s: float = 20.0
     openai_api_key: str = ""
 
     # Embeddings (Voyage AI, a MongoDB company)

@@ -47,9 +47,40 @@ $env:PYTHONPATH='backend'
 .venv/Scripts/python.exe -m pytest -q backend/tests/test_b_voice.py
 ```
 
-Provider tests use HTTP substitutes; database tests use async substitutes. Live
-Atlas, ElevenLabs synthesis/transcription, consenting cloned voice playback and
-noisy-room speaker accuracy must be verified with real configured services.
+Automated provider tests use HTTP substitutes; automated database tests use async
+substitutes. Run the explicitly paid live verification separately:
+
+```powershell
+.venv/Scripts/python.exe backend/scripts/voice_verify_live.py
+```
+
+This uses real ElevenLabs TTS/STT, routes mounted on `app.main`, and real Atlas
+persistence. It overrides TTS/STT mock flags only within that process, uploads
+generated speech, and cleans up its unique synthetic user/session records. Use
+`--isolated-db` only when Atlas is unavailable; that result explicitly reports
+substitute persistence. Generated MP3s stay under ignored `.models/voice-verification`.
+It never prints credentials, provider response bodies, or configured voice IDs.
+
+Live verification passed on 2026-11-14 with the configured ElevenLabs voice:
+
+- SDK TTS and `POST /api/tts` generated MP3s that fully decoded to non-silent
+  44.1 kHz audio (approximately 3.4 seconds). Saved samples are available for listening.
+- Real Scribe correctly transcribed "Hello Maya. The garden looks lovely today."
+  after conversion to 16-kHz mono PCM WAV; comparison ignores case/punctuation.
+- `POST /api/utterances/audio` returned 200 with `source=stt`, persisted the real
+  transcript in Atlas, and dispatched to A's pipeline interface. That interface
+  is still a stub on this branch; suggestion generation is not verified here.
+- Latest observed timings: SDK first audio 784 ms; complete TTS route 556 ms;
+  SDK STT 586 ms; audio-route STT 691 ms and total 870 ms. These are individual
+  observations, not benchmark percentiles or guarantees.
+- Speaker mode was explicitly mocked to unknown/manual fallback. No consented
+  recordings were available, so real enrollment, identity matching and noisy-room
+  accuracy remain unverified. Generated speech was not enrolled as a real person.
+
+The existing local `.env` still enables `MOCK_TTS` and `MOCK_STT`. For live normal
+server startup, set both to `0` in the server process environment (or local config).
+Credentials and config were not changed or committed by the verifier. The physical
+speaker/listening path and frontend playback still need a user-tap check in the UI.
 
 Local verification: SpeechBrain 1.1.2, CPU Torch 2.15.0 and torchaudio 2.11.1
 successfully loaded the public ECAPA model and produced a finite, normalized

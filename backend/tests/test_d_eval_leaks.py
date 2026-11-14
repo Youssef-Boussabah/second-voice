@@ -67,3 +67,31 @@ def test_scoreboard_notes_name_real_models_and_flag_mock():
     notes = _scoreboard_notes(real)
     assert notes.startswith("REAL") and "Qwen/Qwen3-30B-A3B-Instruct-2507" in notes and "GLM-5.3-Flash" in notes
     assert _scoreboard_notes({"cold": {"label": "MOCK"}}).startswith("MOCK")
+
+
+async def test_health_only_rejection_also_blocks_medication_and_dedupes(fake_db):
+    """Live 2026-11-14: Mike's rejected card was tagged only `health`; the next round leaked
+    `medication` ("The meds are doing their job"). The learned rule must cover both, once."""
+    from app.contracts import PersonOut
+    from app.guard.enforce import apply_guard
+
+    def reject(text, topics):
+        return boundaries_mod.propose_and_validate(Event(
+            user_id=USER, type=EventType.suggestion_rejected, person_id="per_mike",
+            relationship="acquaintance", text=text, topics=topics, reason=RejectReason.too_personal))
+
+    learned = await reject("Still adjusting. The dog's chewing boots again.", ["health", "humour"])
+    assert learned is not None and learned.status == "active"
+    assert set(learned.topics) == {"health", "medication"}
+    assert await reject("The meds are a work in progress.", ["medication"]) is None   # no duplicate
+
+    mike = PersonOut(id="per_mike", name="Mike", relationship="acquaintance")
+    rules = await boundaries_mod.get_active_boundaries(USER, "acquaintance", "per_mike")
+    allowed, blocked = apply_guard(
+        [Candidate(text="The meds are doing their job, I suppose.", topics=["humour", "medication"]), SMALL],
+        mike, rules)
+    assert [c.text for c in allowed] == [SMALL.text] and len(blocked) == 1
+
+    # a different sensitive topic is still learnable alongside the existing rule
+    extra = await reject("Money's tight this month.", ["finances", "health"])
+    assert extra is not None and extra.topics == ["finances"]

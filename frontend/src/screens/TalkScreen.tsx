@@ -1,5 +1,6 @@
 import { ContextHeader, PartnerPicker } from "../components/PartnerBar";
 import { Button } from "../components/ui";
+import { IncomingInput, Transcript, WhosThis } from "../components/Incoming";
 import { useStore } from "../store";
 
 export default function TalkScreen() {
@@ -31,6 +32,16 @@ export default function TalkScreen() {
         <summary className="flex min-h-12 cursor-pointer items-center px-2 text-lg font-bold text-muted">Switch person</summary>
         <div className="pt-2"><PartnerPicker compact /></div>
       </details>
+      <WhosThis />
+      <div className="grid gap-4 lg:grid-cols-[minmax(300px,2fr)_3fr] portrait:lg:grid-cols-1">
+        <section aria-label="Their side" className="flex flex-col gap-4 rounded-3xl bg-white/60 p-4">
+          <Transcript />
+          <IncomingInput />
+        </section>
+        <section aria-label="Reply suggestions" className="flex flex-col gap-4">
+          {/* suggestions land here (P4) */}
+        </section>
+      </div>
     </div>
   );
 }

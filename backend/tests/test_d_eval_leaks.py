@@ -58,3 +58,12 @@ def test_scope_rules_person_relationship_global_and_inactive():
     rules = [person_rule, proposed, global_rule]
     assert blocked_topics_for("acquaintance", "per_mike", rules, truth={}) == {"finances", "romance"}
     assert blocked_topics_for("acquaintance", "per_other", rules, truth={}) == {"romance"}
+
+
+def test_scoreboard_notes_name_real_models_and_flag_mock():
+    from app.api.learning_routes import _scoreboard_notes
+    real = {"cold": {"label": "REAL", "models": {"suggest_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                                                "summary_model": "zai-org/GLM-5.3-Flash", "embed_model": "voyage-4-lite"}}}
+    notes = _scoreboard_notes(real)
+    assert notes.startswith("REAL") and "Qwen/Qwen3-30B-A3B-Instruct-2507" in notes and "GLM-5.3-Flash" in notes
+    assert _scoreboard_notes({"cold": {"label": "MOCK"}}).startswith("MOCK")

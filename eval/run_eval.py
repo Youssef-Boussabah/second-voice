@@ -271,6 +271,17 @@ async def main() -> None:
     label = "MOCK" if settings.mock_llm or settings.mock_embed else "REAL"
     if label == "REAL" and (not settings.nebius_api_key or not settings.voyage_api_key):
         raise SystemExit("REAL evaluation requires NEBIUS_API_KEY and VOYAGE_API_KEY; no evaluation records were written.")
+    if label == "REAL":
+        from app.llm import resolve_nebius_model
+        models = {"suggest_model": await resolve_nebius_model(settings.nebius_model),
+                  "summary_model": await resolve_nebius_model(settings.nebius_summary_model or settings.nebius_model)}
+        expected = os.environ.get("EXPECT_SUGGEST_MODEL", "").strip()
+        if expected and models["suggest_model"] != expected:
+            raise SystemExit(f"Suggestion model resolved to {models['suggest_model']}, expected {expected}; nothing written.")
+    else:
+        models = {"suggest_model": "MOCK_LLM canned", "summary_model": "MOCK_LLM canned"}
+    print(f"{label} eval models: suggestions={models['suggest_model']} summaries={models['summary_model']} "
+          f"embeddings={settings.embed_model}", flush=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     client = AsyncMongoClient(settings.mongodb_uri, appname="second-voice-eval", tz_aware=True)
@@ -289,8 +300,8 @@ async def main() -> None:
                 "source .venv/bin/activate && python eval/run_eval.py " + " ".join(sys.argv[1:]),
             ),
             "models": {"llm_provider": settings.llm_provider,
-                       "suggest_model": settings.nebius_model if settings.llm_provider == "nebius" else settings.suggest_model,
-                       "summary_model": settings.nebius_summary_model or settings.nebius_model,
+                       "suggest_model": models["suggest_model"],
+                       "summary_model": models["summary_model"],
                        "embed_model": settings.embed_model, "embed_dim": settings.embed_dim,
                        "temperature": 0.3},
             "mock_flags": {"MOCK_LLM": settings.mock_llm, "MOCK_EMBED": settings.mock_embed},
@@ -310,7 +321,9 @@ async def main() -> None:
                 for key in ("hit_at_4", "taps_per_message", "leaks_per_conversation", "latency_p50_ms", "latency_p95_ms", "privacy_leak_rate", "phrasebook_reuse_rate")
             }
         lines = [f"# {label} Evaluation Results", "", f"Commit: `{commit}`", f"Command: `{payload['command']}`", "",
-                 f"MOCK_LLM={settings.mock_llm} and MOCK_EMBED={settings.mock_embed}.", "",
+                 f"MOCK_LLM={settings.mock_llm} and MOCK_EMBED={settings.mock_embed}.",
+                 f"Suggestion model: `{models['suggest_model']}`. Summary model: `{models['summary_model']}`. "
+                 f"Embeddings: `{settings.embed_model}` ({settings.embed_dim}-d). Repeats: {ARGS.repeats}.", "",
                  "| Metric | COLD | WARM |", "|---|---:|---:|"]
         hit_title = "Exact-text hit@4" if settings.mock_embed else "Voyage cosine hit@4 (≥0.80)"
         for key, title in (("hit_at_4", hit_title), ("taps_per_message", "Taps/message"),
@@ -327,6 +340,7 @@ async def main() -> None:
                         "hit_at_4", "taps_per_message", "leaks_per_conversation", "latency_p50_ms",
                         "latency_p95_ms", "rules_learned", "false_positive_rules", "runs"}},
                     "label": label, "commit": commit, "mock_flags": payload["mock_flags"],
+                    "models": payload["models"],
                     "created_at": datetime.now(timezone.utc),
                 })
         print(f"{label} evaluation complete: {json_path.relative_to(ROOT)}")

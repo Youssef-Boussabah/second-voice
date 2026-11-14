@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -41,10 +42,15 @@ async def main() -> None:
         available_models = await list_nebius_models()
         if not available_models:
             raise RuntimeError("Nebius returned no models")
-        model = await resolve_nebius_model(settings.nebius_model)
-        report("Nebius model", True, model)
+        expected = os.environ.get("EXPECT_SUGGEST_MODEL", "").strip()
+        for label, requested in (("Nebius suggestion model", settings.nebius_model),
+                                 ("Nebius summary model", settings.nebius_summary_model or settings.nebius_model)):
+            resolved = await resolve_nebius_model(requested)
+            ok = resolved == requested and (label != "Nebius suggestion model" or not expected or resolved == expected)
+            # a silent fallback to another model must never be reported as the configured one
+            report(label, ok, resolved if ok else f"{resolved} (configured {requested}, expected {expected or 'n/a'})")
     except Exception as error:
-        report("Nebius model", False, type(error).__name__)
+        report("Nebius suggestion model", False, type(error).__name__)
 
     try:
         vectors = await embed(["Second Voice vector dimension preflight."], "document")

@@ -57,6 +57,14 @@ async def person_context(person_id: str):
     )
 
 
+def _scoreboard_notes(latest: dict[str, dict]) -> str:
+    if any(record.get("label") == "MOCK" for record in latest.values()):
+        return "MOCK scores: deterministic canned LLM and mock embeddings."
+    models = next((record.get("models") for record in latest.values() if record.get("models")), {}) or {}
+    detail = ", ".join(f"{key}={models[key]}" for key in ("suggest_model", "summary_model", "embed_model") if models.get(key))
+    return "REAL scores: Nebius/Voyage pipeline" + (f" ({detail})." if detail else ".")
+
+
 @router.get("/eval/scoreboard", response_model=Scoreboard)
 async def eval_scoreboard():
     records = await db.db()[db.EVAL_RUNS].find({"user_id": settings.demo_user_id}).sort("created_at", -1).to_list(100)
@@ -76,9 +84,7 @@ async def eval_scoreboard():
             raise HTTPException(500, f"stored {config} eval metrics are invalid") from error
     return Scoreboard(
         cold=metrics("cold"), warm=metrics("warm"),
-        notes=("MOCK scores: deterministic canned LLM and mock embeddings." if any(
-            record.get("label") == "MOCK" for record in latest.values()
-        ) else "REAL scores: persisted Lane A model and embedding measurements."),
+        notes=_scoreboard_notes(latest),
         updated_at=max((record.get("created_at", datetime.now(timezone.utc)) for record in latest.values()), default=datetime.now(timezone.utc)),
     )
 

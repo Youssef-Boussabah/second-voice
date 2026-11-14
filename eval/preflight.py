@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from app import db
 from app.config import settings
 from app.embeddings import embed
-from app.llm import resolve_nebius_model
+from app.llm import list_nebius_models, resolve_nebius_model
 
 
 async def main() -> None:
@@ -38,6 +38,9 @@ async def main() -> None:
         report("Atlas ping", False, type(error).__name__)
 
     try:
+        available_models = await list_nebius_models()
+        if not available_models:
+            raise RuntimeError("Nebius returned no models")
         model = await resolve_nebius_model(settings.nebius_model)
         report("Nebius model", True, model)
     except Exception as error:

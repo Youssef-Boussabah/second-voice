@@ -17,11 +17,29 @@ class Settings(BaseSettings):
     demo_user_id: str = "usr_maya"
 
     # LLM
-    llm_provider: str = "anthropic"            # anthropic | openai
+    llm_provider: str = "nebius"               # nebius | anthropic | openai
     suggest_model: str = "claude-haiku-5-5"
     summary_model: str = "claude-sonnet-5-5"
     openai_suggest_model: str = "gpt-5-mini"   # DECISION: set to whatever your OpenAI key has
     anthropic_api_key: str = ""
+    # Nebius Token Factory (OpenAI-compatible). Model is verified against /v1/models at first use;
+    # if it isn't listed, llm.py picks the first available entry of nebius_fallback_models.
+    nebius_api_key: str = ""
+    nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1/"
+    # DECISION (measured 2026-11-14 on Token Factory): zai-org/GLM-5.3-Flash is available but is a
+    # reasoning model: 8.6 s per suggestion call even at reasoning_effort=low (40 s+ under
+    # concurrency, empty content at defaults). Qwen3-30B-A3B-Instruct-2507 returned valid JSON in
+    # 0.85-1.3 s, so it drives the hot path; GLM-5.3-Flash handles latency-tolerant summaries.
+    nebius_model: str = "Qwen/Qwen3-30B-A3B-Instruct-2507"     # hot path: reply suggestions
+    nebius_summary_model: str = "zai-org/GLM-5.3-Flash"        # Lane D episode summaries
+    nebius_fallback_models: str = (
+        "MiniMaxAI/MiniMax-M3.1-Flash,deepseek-ai/DeepSeek-V4.1-Flash-1017,"
+        "Qwen/Qwen3-235B-A22B-Instruct-2507,openai/gpt-oss-120b,zai-org/GLM-5.3-Flash"
+    )
+    # Models that think before answering: we send reasoning_effort=low and a bigger token budget.
+    nebius_reasoning_models: str = "zai-org/GLM,openai/gpt-oss,deepseek-ai/DeepSeek-V4-Pro,moonshotai/Kimi"
+    llm_timeout_s: float = 20.0                # hot path (suggestions)
+    llm_summary_timeout_s: float = 90.0        # summaries / non-hot-path calls
     openai_api_key: str = ""
 
     # Embeddings (Voyage AI, a MongoDB company)

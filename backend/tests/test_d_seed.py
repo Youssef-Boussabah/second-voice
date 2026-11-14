@@ -49,3 +49,18 @@ def test_open_thread_ids_are_unique_and_lane_d_phrases_are_scoped():
     assert sum("saturday game" in text.lower() for text in open_texts) == 1
     mike_phrase = next(m for m in memories if m["_id"] == "mem_ph_maya_dry")
     assert mike_phrase["person_id"] == "per_mike"
+
+
+def test_sam_is_mayas_teenage_grandson_not_a_sibling():
+    people = {p["_id"]: p for p in json.loads((ROOT / "seed/people.json").read_text())}
+    sam = people["per_sam"]
+    assert sam["relationship"] == "family" and "grandson" in sam["label"].lower() and "16" in sam["notes"]
+    texts = [sam["label"], sam["notes"]]
+    texts += [m["text"] for m in json.loads((ROOT / "seed/memories.json").read_text()) if m["person_id"] == "per_sam"]
+    texts += [e["text"] for e in json.loads((ROOT / "seed/history_events.json").read_text()) if e["person_id"] == "per_sam"]
+    for path in sorted((ROOT / "seed/conversations").glob("c*.json")):
+        conversation = json.loads(path.read_text())
+        if conversation["person_id"] == "per_sam":
+            texts += [t.get("text") or t.get("intended") for t in conversation["turns"]]
+    for marker in ("brother", "sibling", "sister", "tell mom", "recreational"):
+        assert not any(marker in text.lower() for text in texts), marker

@@ -84,6 +84,8 @@ async def apply_seed(database, *, dry_run: bool) -> dict[str, dict[str, int]]:
                     for keep in ("embedding", "voiceprints", "voice_centroid", "consent"):
                         if keep in previous:
                             replacement[keep] = previous[keep]
+                    if previous.get("text") != document.get("text"):
+                        replacement.pop("embedding", None)  # stale vector; backfill re-embeds it
                     await collection.replace_one({"_id": document["_id"], "seed_source": SEED_TAG}, replacement)
             else:
                 inserted += 1

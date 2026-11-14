@@ -87,3 +87,14 @@ async def test_seed_never_overwrites_a_document_owned_by_another_lane():
     report = await demo_seed.apply_seed(database, dry_run=False)
     assert report["people"]["skip_not_owned"] == 1
     assert database["people"].docs[0]["name"] == "Lane B Dana"
+
+
+async def test_reseed_drops_embedding_only_when_seed_text_changed():
+    database = FakeDB()
+    await demo_seed.apply_seed(database, dry_run=False)
+    await database["memories"].update_one({"_id": "mem_ph_sam_bud"}, {"$set": {"embedding": [0.1]}})
+    await database["memories"].update_one({"_id": "mem_f_sam_hockey"}, {"$set": {"embedding": [0.2], "text": "old text"}})
+    await demo_seed.apply_seed(database, dry_run=False)
+    docs = {d["_id"]: d for d in database["memories"].docs}
+    assert docs["mem_ph_sam_bud"]["embedding"] == [0.1]
+    assert "embedding" not in docs["mem_f_sam_hockey"] and "grandson" in docs["mem_f_sam_hockey"]["text"]

@@ -75,6 +75,8 @@ async def eval_scoreboard():
             raise HTTPException(500, f"stored {config} eval metrics are invalid") from error
     return Scoreboard(
         cold=metrics("cold"), warm=metrics("warm"),
-        notes="Scores are sourced from persisted evaluation runs.",
+        notes=("MOCK scores: deterministic canned LLM and mock embeddings." if any(
+            record.get("label") == "MOCK" for record in latest.values()
+        ) else "REAL scores: persisted Lane A model and embedding measurements."),
         updated_at=max((record.get("created_at", datetime.now(timezone.utc)) for record in latest.values()), default=datetime.now(timezone.utc)),
     )

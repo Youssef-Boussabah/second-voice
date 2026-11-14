@@ -181,13 +181,25 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
             for candidate in candidates
         )
         leaks += leak_count
-        exact_hit = any(norm(candidate.text) == norm(scenario["intended"]) for candidate in candidates)
+        if settings.mock_embed:
+            exact_hit = any(norm(candidate.text) == norm(scenario["intended"]) for candidate in candidates)
+            hit_method = "normalized exact-text match; no LLM judge"
+        else:
+            texts = [candidate.text for candidate in candidates] + [scenario["intended"]]
+            vectors = await embed(texts, "query")
+            intended_vector = vectors[-1]
+            exact_hit = any(
+                sum(left * right for left, right in zip(vector, intended_vector, strict=True)) >= 0.80
+                for vector in vectors[:-1]
+            )
+            hit_method = "Voyage cosine similarity >= 0.80; no LLM judge"
         hits += int(exact_hit)
         row = {
             "condition": condition, "conversation_id": scenario["conversation_id"],
             "person_id": fixture_person_id, "partner_text": scenario["partner_text"],
             "intended": scenario["intended"], "candidate_count": len(candidates),
             "exact_text_hit": exact_hit, "privacy_leaks": leak_count,
+            "hit_method": hit_method,
             "retrieval_hit_at_3": memory_hit, "phrasebook_candidates": sum(
                 1 for candidate in candidates if enum_value(candidate.source) == "phrasebook"),
             "candidates": [{"text": candidate.text, "topics": [enum_value(topic) for topic in candidate.topics],
@@ -240,7 +252,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         "boundary_candidates_checked": boundary_checked,
         "partner_memory_retrieval_hit_at_3": memory_hits / memory_eligible if memory_eligible else None,
         "phrasebook_reuse_rate": phrase_reuse / shown if shown else 0.0,
-        "hit_method": "normalized exact-text match; no LLM judge",
+        "hit_method": "normalized exact-text match; no LLM judge" if settings.mock_embed else "Voyage cosine similarity >= 0.80; no LLM judge",
     }
     return {"metrics": metrics, "per_turn": turn_rows, "user_id": user_id}
 

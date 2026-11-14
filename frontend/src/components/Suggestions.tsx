@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import SensitiveText from "./SensitiveText";
 import type { Candidate, RejectReason } from "../contracts";
 import { listJoin, scopeLabel, topicLabel, useStore } from "../store";
 import Icon, { type IconName } from "./Icon";
@@ -166,13 +167,13 @@ function HiddenNotice() {
       </button>
       {open && (
         <Sheet title="Hidden by your privacy rules" onClose={() => setOpen(false)} labelledBy="hidden-title" icon="lock">
-          <p className="mb-4 text-lg text-muted">These were never shown. The rule is enforced in code, before anything reaches the screen.</p>
+          <p className="mb-4 text-lg text-muted">These were never shown. The rule is enforced in code, before anything reaches the screen. Their wording stays hidden unless you choose to look.</p>
           <ul className="flex flex-col gap-3">
             {blocked.map((c) => {
               const b = boundaries.find((x) => x._id === c.blocked_by);
               return (
                 <li key={c.id} className="rounded-3xl border border-line bg-surface p-4">
-                  <p className="text-xl text-muted line-through decoration-lock/50">“{c.text}”</p>
+                  <SensitiveText text={c.text} what="suggestion" />
                   <p className="mt-1 flex items-center gap-2 text-lg font-bold text-lock-dark">
                     <Icon name="shield" size={20} />
                     {b ? `Keep ${listJoin(b.topics.map(topicLabel))} private with ${scopeLabel(b, people)}` : "Privacy rule"}

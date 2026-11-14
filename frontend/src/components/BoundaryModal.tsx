@@ -1,4 +1,5 @@
 import { Button, Sheet } from "./ui";
+import SensitiveText from "./SensitiveText";
 import Icon from "./Icon";
 import { listJoin, scopeLabel, topicLabel, useStore } from "../store";
 
@@ -15,7 +16,8 @@ export default function BoundaryModal() {
       </p>
       {b.evidence.rejected_text && (
         <p className="mt-4 rounded-3xl border border-line bg-surface p-4 text-xl text-muted">
-          Because you marked as too personal: <q className="font-bold text-ink">{b.evidence.rejected_text}</q>
+          <span className="mb-2 block">Because you marked a reply as too personal.</span>
+          <SensitiveText text={b.evidence.rejected_text} />
         </p>
       )}
       <p className="mt-4 flex items-start gap-2 text-lg text-muted">

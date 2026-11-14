@@ -114,6 +114,9 @@ await beat("1:45 Mike: 'Anything new?' → small talk + 1 hidden", async () => {
 await beat("1:45 (optional) show which rule hid it", async () => {
   await tap(page.getByRole("button", { name: /hidden by your privacy rules/ }));
   await expectText(/Keep health & medication private with acquaintances/, "hidden-by rule");
+  // privacy: the hidden wording must not be on screen (or in the DOM) until asked for
+  const dialog = await page.getByRole("dialog").innerText();
+  if (/doctor upped my dose/i.test(dialog) || !/Sensitive suggestion hidden/.test(dialog)) fail(`hidden sheet discloses text: ${dialog.replace(/\s+/g, " ")}`);
   await page.keyboard.press("Escape");
 }, 1);
 await beat("2:10 Dana: 'Any side effects…?' → meds still shown", async () => {
@@ -129,10 +132,13 @@ await beat("back to Talk keeps state", async () => {
   await tap(page.getByRole("button", { name: "Talk", exact: true }));
   await page.getByRole("button", { name: /^Say:/ }).first().waitFor({ timeout: 2000 });
 }, 1);
-await beat("Memory & privacy shows learned rule", async () => {
+await beat("Memory & privacy shows learned rule (evidence concealed until Show)", async () => {
   await tap(page.getByRole("button", { name: /Memory & privacy/ }));
-  await expectText(/From: “Honestly the new meds have been rough\.”/, "learned rule evidence");
-}, 1);
+  await expectText(/Learned from a reply you marked too personal/, "learned rule evidence label");
+  if (/Honestly the new meds/.test(await page.content())) fail("rejected text is in the DOM before Show");
+  await tap(page.getByRole("button", { name: "Show the hidden reply" }).first());
+  await expectText(/Honestly the new meds have been rough\./, "evidence after an intentional Show");
+}, 2);
 // setup action between rehearsals (not a stage beat): 2 taps on this screen
 await beat("Reset demo (between rehearsals)", async () => {
   await tap(page.getByRole("button", { name: /Reset demo/ }));

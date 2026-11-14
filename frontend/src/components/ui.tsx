@@ -51,7 +51,11 @@ export function Sheet({ title, onClose, children, labelledBy = "sheet-title", ic
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>("[data-autofocus], textarea, input, button:not([data-close])")?.focus();
+    // never land initial focus on a control that reveals sensitive text (a stray Enter would show it)
+    const root = ref.current;
+    (root?.querySelector<HTMLElement>("[data-autofocus]")
+      ?? root?.querySelector<HTMLElement>("textarea, input, button:not([data-close]):not([data-sensitive])")
+      ?? root?.querySelector<HTMLElement>("[data-close]"))?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => {

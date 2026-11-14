@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import SensitiveText from "../components/SensitiveText";
 import type { Boundary, PersonContext } from "../contracts";
 import { api } from "../lib/api";
 import { USE_MOCKS } from "../config";
@@ -146,7 +147,12 @@ function BoundaryList() {
             <Chip tone={b.origin === "learned" ? "lock" : "neutral"}>{b.origin === "learned" ? "Learned from you" : b.origin === "seed" ? "Default" : "Manual"}</Chip>
             <span className="text-base text-muted">{fmt(b.activated_at ?? b.created_at)}</span>
           </div>
-          {b.evidence.rejected_text && <p className="mt-2 text-lg text-muted">From: “{b.evidence.rejected_text}”</p>}
+          {b.evidence.rejected_text && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-lg text-muted">
+              <span>Learned from a reply you marked too personal:</span>
+              <SensitiveText text={b.evidence.rejected_text} />
+            </div>
+          )}
           {b.validation.replayed > 0 && (
             <p className="mt-1 flex items-center gap-1.5 text-base text-muted">
               <Icon name="check" size={18} className="text-voice" />

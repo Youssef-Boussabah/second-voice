@@ -11,6 +11,7 @@ from app.contracts import (
     new_id,
 )
 from app.db import BOUNDARIES, EVENTS, db
+from app.learning.demo_seed import LEARNED_TAG
 
 
 async def propose_and_validate(evt: Event) -> Boundary | None:
@@ -62,7 +63,7 @@ async def propose_and_validate(evt: Event) -> Boundary | None:
         created_at=now,
         activated_at=now if status == "active" else None,
     )
-    await database[BOUNDARIES].insert_one(boundary.to_mongo())
+    await database[BOUNDARIES].insert_one(boundary.to_mongo() | LEARNED_TAG)
     return boundary
 
 

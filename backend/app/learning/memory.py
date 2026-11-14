@@ -5,6 +5,7 @@ from app.contracts import EpisodeSummary, Memory, OpenThread, RetrievedContext, 
 from app.db import MEMORIES, PEOPLE, db
 from app.embeddings import embed
 from app.learning.boundaries import get_active_boundaries
+from app.learning.demo_seed import LEARNED_TAG
 
 
 async def save_episode(user_id: str, person_id: str, session_id: str, summary: EpisodeSummary) -> str:
@@ -18,7 +19,7 @@ async def save_episode(user_id: str, person_id: str, session_id: str, summary: E
         text=summary.summary, topics=summary.topics, open_threads=summary.open_threads_new,
         session_id=session_id, embedding=(await embed([summary.summary], "document"))[0], created_at=now,
     )
-    await db()[MEMORIES].insert_one(memory.to_mongo())
+    await db()[MEMORIES].insert_one(memory.to_mongo() | LEARNED_TAG)
     return memory.id
 
 

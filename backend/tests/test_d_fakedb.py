@@ -142,6 +142,13 @@ class FakeCollection:
                 return _Result(matched_count=1, modified_count=1)
         return _Result(matched_count=0, modified_count=0)
 
+    async def replace_one(self, flt: dict, replacement: dict):
+        for index, d in enumerate(self.docs):
+            if matches(d, flt):
+                self.docs[index] = copy.deepcopy(replacement) | {"_id": d["_id"]}
+                return _Result(matched_count=1, modified_count=1)
+        return _Result(matched_count=0, modified_count=0)
+
     async def update_many(self, flt: dict, update: dict):
         hits = [d for d in self.docs if matches(d, flt)]
         for d in hits:

@@ -1,11 +1,12 @@
 """Lane D: learning and evaluation read/action routes."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app import db
 from app.config import settings
 from app.contracts import Boundary, PersonContext, Scoreboard, ConfigMetrics
+from app.learning.demo_seed import reset_demo
 from app.learning.memory import retrieve_person_context
 
 router = APIRouter(prefix="/api", tags=["learning"])
@@ -80,3 +81,9 @@ async def eval_scoreboard():
         ) else "REAL scores: persisted Lane A model and embedding measurements."),
         updated_at=max((record.get("created_at", datetime.now(timezone.utc)) for record in latest.values()), default=datetime.now(timezone.utc)),
     )
+
+
+@router.post("/admin/reset-demo")
+async def admin_reset_demo(dry_run: bool = Query(False, description="preview counts without writing")):
+    """Delete the demo user's lane-d learned docs + demo sessions/events, then re-seed (idempotent)."""
+    return await reset_demo(db.db(), dry_run=dry_run)

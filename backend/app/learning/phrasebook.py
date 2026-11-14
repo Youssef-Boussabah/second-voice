@@ -13,6 +13,7 @@ import numpy as np
 from app.contracts import Event, new_id
 from app.db import MEMORIES, SUGGESTION_SETS, db
 from app.embeddings import embed
+from app.learning.demo_seed import LEARNED_TAG
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ async def learn_phrase(evt: Event) -> str | None:
         "_id": memory_id, "user_id": evt.user_id, "person_id": person_id,
         "kind": "phrase", "status": "active", "text": text, "topics": [str(getattr(t, "value", t)) for t in evt.topics],
         "uses": 1, "last_used": now, "origin": ORIGIN[_event_type(evt)], "source_event_id": evt.id,
-        "embedding": vector, "created_at": now,
+        "embedding": vector, "created_at": now, **LEARNED_TAG,
     })
     log.info("phrase new mem=%s person=%s %dms", memory_id, person_id, (time.perf_counter() - started) * 1000)
     return memory_id

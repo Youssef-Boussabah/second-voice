@@ -37,7 +37,12 @@ async def retrieve_person_context(user_id: str, person_id: str, relationship: st
         "user_id": user_id, "status": "active", "person_id": {"$in": [person_id, "global"]},
     }).sort("created_at", -1).to_list(length=200)
     episodes = [Memory.model_validate(item) for item in memories if item.get("kind") == "episode" and item.get("person_id") == person_id]
-    phrases = [Memory.model_validate(item) for item in memories if item.get("kind") == "phrase"]
+    # "Your usual phrases with them" is per partner only; global seed phrases are not theirs.
+    phrases = sorted(
+        (Memory.model_validate(item) for item in memories
+         if item.get("kind") == "phrase" and item.get("person_id") == person_id),
+        key=lambda memory: memory.uses, reverse=True,
+    )
     facts = [Memory.model_validate(item) for item in memories if item.get("kind") == "fact"]
     open_threads: list[OpenThread] = []
     for episode in episodes:

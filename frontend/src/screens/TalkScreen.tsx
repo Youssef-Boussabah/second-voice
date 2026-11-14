@@ -1,5 +1,6 @@
 import { ContextHeader, PartnerPicker } from "../components/PartnerBar";
 import { Button } from "../components/ui";
+import Suggestions from "../components/Suggestions";
 import { IncomingInput, Transcript, WhosThis } from "../components/Incoming";
 import { useStore } from "../store";
 
@@ -39,7 +40,7 @@ export default function TalkScreen() {
           <IncomingInput />
         </section>
         <section aria-label="Reply suggestions" className="flex flex-col gap-4">
-          {/* suggestions land here (P4) */}
+          <Suggestions />
         </section>
       </div>
     </div>

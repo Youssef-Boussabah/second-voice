@@ -99,6 +99,8 @@ export const useStore = create<State>((set, get) => {
     if (cur && cur._id === incoming._id && cur.stage === "final" && incoming.stage === "instant") return;
     if (cur && cur._id !== incoming._id && cur.created_at > incoming.created_at) return;
     set({ suggestions: incoming });
+    const known = new Set(get().boundaries.map((b) => b._id));
+    if (incoming.blocked.some((c) => c.blocked_by && !known.has(c.blocked_by))) void get().refreshBoundaries();
   };
 
   const logPrivacy = (kind: PrivacyChange["kind"], b: Boundary) =>

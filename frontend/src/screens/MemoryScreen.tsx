@@ -66,7 +66,7 @@ function PersonMemory() {
             <h3 className="text-base font-bold uppercase tracking-wide text-muted">Open threads</h3>
             {ctx.open_threads.length ? (
               <ul className="mt-1 list-disc pl-6 text-xl">
-                {ctx.open_threads.map((t) => <li key={t.id}>{t.text} {t.status === "resolved" && <span className="text-muted">(resolved)</span>}</li>)}
+                {ctx.open_threads.map((t, i) => <li key={`${t.id}-${i}`}>{t.text} {t.status === "resolved" && <span className="text-muted">(resolved)</span>}</li>)}
               </ul>
             ) : <p className="mt-1 text-xl text-muted">None</p>}
           </div>

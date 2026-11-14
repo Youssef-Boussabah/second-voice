@@ -256,6 +256,13 @@ export const useStore = create<State>((set, get) => {
       try {
         await api.reject(set_._id, { candidate_id: c.id, reason, event_id: newId("evt") });
         if (reason !== "too_personal") get().pushToast({ tone: "info", title: "Thanks, noted" });
+        else {
+          // the learned-rule toast arrives over WS; if it doesn't, still acknowledge the tap
+          const before = get().privacyLog.length;
+          setTimeout(() => {
+            if (get().privacyLog.length === before) get().pushToast({ tone: "info", title: "Noted: too personal", body: "That reply is hidden." });
+          }, 5000);
+        }
       } catch (e) {
         fail("record that")(e);
       }

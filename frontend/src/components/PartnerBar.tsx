@@ -63,7 +63,11 @@ export function ContextHeader() {
   const person = ctx?.person ?? people.find((p) => p.id === personId);
   if (!person) return null;
   const last = lastTalked(ctx?.last_episode?.created_at ?? person.last_seen);
-  const threads = (ctx?.open_threads ?? []).filter((t) => t.status === "open");
+  // backend may repeat a thread id across episodes: dedupe, and keep the header to 2 chips
+  const seen = new Set<string>();
+  const threads = (ctx?.open_threads ?? [])
+    .filter((t) => t.status === "open" && !seen.has(t.id) && (seen.add(t.id), true))
+    .slice(0, 2);
   return (
     <section aria-label="Conversation partner" className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <h1 className="text-2xl font-bold lg:text-3xl">

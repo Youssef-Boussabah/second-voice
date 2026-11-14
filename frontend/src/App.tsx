@@ -52,13 +52,14 @@ export default function App() {
                 type="button"
                 onClick={() => setScreen(t.id)}
                 aria-current={on ? "page" : undefined}
+                aria-label={t.label}
                 className={`inline-flex min-h-16 items-center gap-2 whitespace-nowrap rounded-[18px] px-4 text-lg font-bold transition-colors sm:px-5 ${
                   on ? "bg-ink text-white shadow-card" : "text-muted hover:bg-ink/5 hover:text-ink"
                 }`}
               >
                 <Icon name={t.icon} size={22} />
-                <span className="hidden md:inline">{t.label}</span>
-                <span className="md:hidden">{t.short}</span>
+                <span className="hidden lg:inline">{t.label}</span>
+                <span className="lg:hidden">{t.short}</span>
               </button>
             );
           })}

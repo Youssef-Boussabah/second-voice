@@ -384,9 +384,11 @@ export const useStore = create<State>((set, get) => {
     },
 
     pushToast(t) {
+      // the same news can arrive on two sockets (an ended chat's socket lingers for its summary)
+      if (get().toasts.some((x) => x.title === t.title)) return;
       const id = newId("evt");
-      set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-3) }));
-      setTimeout(() => get().dismissToast(id), t.tone === "error" ? 8000 : 6500);
+      set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-2) }));
+      setTimeout(() => get().dismissToast(id), t.tone === "error" ? 8000 : t.tone === "learned" ? 7000 : 4500);
     },
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   };

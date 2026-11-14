@@ -40,7 +40,7 @@ export default function TalkScreen() {
   if (landscape) {
     // Tablet landscape / desktop: context rail on the left, the reply cards are the hero.
     return (
-      <div className="mx-auto grid h-full max-w-[1500px] grid-cols-[minmax(300px,360px)_1fr] gap-5 p-5">
+      <div className="mx-auto grid h-full max-w-[1500px] grid-cols-[300px_minmax(0,1fr)] gap-5 p-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <aside aria-label="Who and what" className="flex min-h-0 flex-col gap-4">
           <PartnerCard />
           <div>
@@ -49,7 +49,7 @@ export default function TalkScreen() {
           </div>
           <Conversation />
         </aside>
-        <div className="scroll-soft flex min-h-0 flex-col gap-5 overflow-y-auto pb-2 pr-1">
+        <div className="scroll-soft flex min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden pb-2 pr-1">
           <WhosThis />
           <section aria-label="Reply suggestions"><Suggestions /></section>
           <div className="panel mt-auto p-4"><IncomingInput /></div>

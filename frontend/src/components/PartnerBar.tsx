@@ -132,7 +132,7 @@ export function PartnerCard({ compact = false }: { compact?: boolean }) {
       )}
       {session && !compact && (
         <Button tone="danger" className="w-full" onClick={() => void end()} aria-label="End conversation and save memory">
-          <Icon name="power" size={22} /> End chat & remember it
+          <Icon name="power" size={22} /> End chat
         </Button>
       )}
     </section>

@@ -15,8 +15,8 @@ function SourceBadge({ c }: { c: Candidate }) {
 
 function Badge({ icon, text, tone = "neutral" }: { icon: IconName; text: string; tone?: "neutral" | "voice" }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[15px] font-bold ${tone === "voice" ? "bg-voice-soft text-voice-dark" : "bg-ink/[.05] text-muted"}`}>
-      <Icon name={icon} size={16} /> {text}
+    <span className={`inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[15px] font-bold ${tone === "voice" ? "bg-voice-soft text-voice-dark" : "bg-ink/[.05] text-muted"}`}>
+      <Icon name={icon} size={16} /> <span className="truncate">{text}</span>
     </span>
   );
 }
@@ -75,7 +75,7 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
         aria-label={speaking ? `Stop speaking: ${c.text}` : `Say: ${c.text}`}
         aria-describedby={`cand-hint-${c.id}`}
         aria-keyshortcuts={String(index + 1)}
-        className="flex flex-1 select-none items-start gap-4 rounded-t-4xl px-6 pb-2 pt-5 text-left"
+        className="flex flex-1 select-none items-start gap-3.5 rounded-t-4xl px-5 pb-2 pt-5 text-left"
       >
         <span aria-hidden className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-lg font-bold ${speaking ? "bg-voice text-white" : "bg-ink/[.06] text-muted"}`}>
           {index + 1}
@@ -83,8 +83,8 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
         <span className="text-[27px] font-bold leading-[1.22] tracking-[-0.005em] text-ink lg:text-[29px]">{c.text}</span>
       </button>
       <span id={`cand-hint-${c.id}`} className="sr-only">Tap to speak. Long-press or use More to reject.</span>
-      <div className="flex items-center gap-1 pb-2 pl-6 pr-2">
-        <span role="status" className="flex flex-1 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1 pb-2 pl-5 pr-2">
+        <span role="status" className="flex min-w-0 flex-1 items-center gap-2">
           {speaking ? (
             <span className="inline-flex items-center gap-2 text-base font-bold text-voice-dark"><Bars /> Speaking · tap to stop</span>
           ) : chosen ? (

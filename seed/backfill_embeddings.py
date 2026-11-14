@@ -38,7 +38,7 @@ async def main(dry_run: bool) -> None:
     batch: list[dict] = []
     async for record in cursor:
         batch.append(record)
-        if len(batch) == 32:
+        if len(batch) == 128:  # one Voyage call for the whole lane-d seed
             await write_batch(collection, batch)
             batch = []
     if batch:
@@ -46,7 +46,17 @@ async def main(dry_run: bool) -> None:
 
 
 async def write_batch(collection, batch: list[dict]) -> None:
-    vectors = await embed([record["text"] for record in batch], "document")
+    vectors = None
+    for attempt in range(6):  # free tier is 3 RPM: back off 25s, 40s, 55s... between tries
+        try:
+            vectors = await embed([record["text"] for record in batch], "document")
+            break
+        except Exception as error:  # noqa: BLE001
+            if "RateLimit" not in type(error).__name__ or attempt == 5:
+                raise
+            wait = 25 + 15 * attempt
+            print(f"Voyage rate limited; retrying in {wait}s (attempt {attempt + 2}/6)")
+            await asyncio.sleep(wait)
     if len(vectors) != len(batch) or any(len(vector) != 1024 for vector in vectors):
         raise RuntimeError("Voyage returned an unexpected vector count or dimension; refusing writes.")
     for record, vector in zip(batch, vectors, strict=True):

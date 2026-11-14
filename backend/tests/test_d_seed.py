@@ -64,3 +64,8 @@ def test_sam_is_mayas_teenage_grandson_not_a_sibling():
             texts += [t.get("text") or t.get("intended") for t in conversation["turns"]]
     for marker in ("brother", "sibling", "sister", "tell mom", "recreational"):
         assert not any(marker in text.lower() for text in texts), marker
+
+
+def test_partner_names_match_product_doc():
+    names = {p["_id"]: p["name"] for p in json.loads((ROOT / "seed/people.json").read_text())}
+    assert names == {"per_dana": "Dana Okafor", "per_sam": "Sam Chen", "per_mike": "Mike Russo"}

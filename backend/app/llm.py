@@ -57,9 +57,15 @@ async def complete_json(system: str, user: str, schema: type[T], *, model: str |
     for attempt in range(2):
         try:
             if settings.llm_provider == "nebius":
-                mdl = await resolve_nebius_model(_nebius_requested(model))
-                raw = await _openai_compat_json(_get_nebius(), mdl, system, prompt, schema,
-                                                temperature, max_tokens)
+                requested = _nebius_requested(model)
+                mdl = await resolve_nebius_model(requested)
+                hot = requested == settings.nebius_model
+                reasoning = _is_reasoning(mdl)
+                raw = await _openai_compat_json(
+                    _get_nebius(), mdl, system, prompt, schema, temperature,
+                    max(max_tokens, 4096) if reasoning else max_tokens,
+                    extra_body={"reasoning_effort": "low"} if reasoning else None,
+                    timeout=settings.llm_timeout_s if hot else settings.llm_summary_timeout_s)
                 out = _validate(schema, raw)
             elif settings.llm_provider == "openai":
                 mdl = model if model and model.startswith(("gpt", "o")) else settings.openai_suggest_model
@@ -235,16 +241,27 @@ def pick_model(requested: str, available: list[str], fallbacks: list[str]) -> st
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 
 
+def _is_reasoning(model: str) -> bool:
+    prefixes = [p.strip().lower() for p in settings.nebius_reasoning_models.split(",") if p.strip()]
+    return any(model.lower().startswith(p) for p in prefixes)
+
+
 async def _openai_compat_json(client, model: str, system: str, user: str, schema: type[BaseModel],
-                              temperature: float, max_tokens: int) -> str:
+                              temperature: float, max_tokens: int, *,
+                              extra_body: dict[str, Any] | None = None,
+                              timeout: float | None = None) -> str:
     """Chat completion asking for JSON. Uses response_format=json_object when the model accepts
     it; on a 400 that mentions it, remembers that and retries prompt-only."""
     import openai
 
+    if timeout is not None and hasattr(client, "with_options"):
+        client = client.with_options(timeout=timeout)
     messages = [{"role": "system", "content": _json_system(system, schema)},
                 {"role": "user", "content": user}]
     kwargs: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": max_tokens,
                               "temperature": temperature}
+    if extra_body:
+        kwargs["extra_body"] = extra_body
     if _json_mode_ok.get(model, True):
         kwargs["response_format"] = {"type": "json_object"}
     try:
@@ -255,6 +272,9 @@ async def _openai_compat_json(client, model: str, system: str, user: str, schema
             log.warning("%s rejected response_format (%s); using prompt-only JSON", model, str(e)[:160])
             _json_mode_ok[model] = False
             kwargs.pop("response_format")
+        elif "extra_body" in kwargs and "reasoning" in msg:
+            log.warning("%s rejected reasoning_effort; retrying without it", model)
+            kwargs.pop("extra_body")
         elif "max_tokens" in msg or "temperature" in msg:
             kwargs.pop("temperature", None)
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
@@ -270,11 +290,11 @@ async def _openai_compat_json(client, model: str, system: str, user: str, schema
         raise LLMUnavailable(f"{model} {e.status_code}: {str(e)[:200]}") from e
     if not resp.choices:
         raise ValueError(f"{model} returned no choices")
-    msg = resp.choices[0].message
-    text = msg.content or ""
+    choice = resp.choices[0]
+    text = choice.message.content or ""
     if not text.strip():
-        # some reasoning models leave content empty and put the answer in reasoning_content
-        text = getattr(msg, "reasoning_content", None) or ""
+        # reasoning models can burn the whole budget thinking and return empty content
+        raise ValueError(f"{model} returned empty content (finish_reason={choice.finish_reason})")
     return text
 
 

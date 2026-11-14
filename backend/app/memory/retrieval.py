@@ -19,7 +19,7 @@ from app.config import settings
 from app.contracts import (
     Boundary, Memory, OpenThread, Person, PersonOut, RetrievedContext, Utterance,
 )
-from app.embeddings import embed
+from app.embeddings import embed_query
 
 log = logging.getLogger(__name__)
 
@@ -143,21 +143,26 @@ async def phrase_candidates(user_id: str, person_id: str | None, qvec: list[floa
 # ───────────────────────── main entry ─────────────────────────
 async def get_context(user_id: str, person_id: str | None, utterance_text: str, *,
                       session_id: str | None = None, qvec: list[float] | None = None,
-                      person: PersonOut | None = None) -> RetrievedContext:
+                      person: PersonOut | None = None, skip_embed: bool = False) -> RetrievedContext:
     """Everything the generator needs about this relationship, in one parallel fan-out."""
     t0 = time.perf_counter()
     mem = db.db()[db.MEMORIES]
-    if qvec is None and utterance_text:
-        qvec = (await embed([utterance_text], "query"))[0]
+    if qvec is None and utterance_text and not skip_embed:
+        try:
+            qvec = await embed_query(utterance_text)
+        except Exception as e:  # noqa: BLE001  text search still runs without a vector
+            log.warning("query embedding unavailable (%s); text-only retrieval", str(e)[:160])
 
     async def _person():
         return person if person is not None else await load_person(person_id)
 
     async def _hybrid() -> list[Memory]:
-        if not person_id or qvec is None:
+        if not person_id:
+            return []
+        async def _none() -> list:
             return []
         vec_docs, txt_docs = await asyncio.gather(
-            vector_search(user_id, [person_id], "episode", qvec, limit=5),
+            vector_search(user_id, [person_id], "episode", qvec, limit=5) if qvec is not None else _none(),
             text_search(user_id, person_id, "episode", utterance_text, limit=5),
         )
         by_id = {d["_id"]: d for d in [*vec_docs, *txt_docs]}

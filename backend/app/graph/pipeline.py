@@ -21,9 +21,9 @@ from app import db
 from app.config import settings
 from app.contracts import (
     Candidate, CandidateSource, GeneratedCandidates, PersonOut, PipelineState, RetrievedContext,
-    SuggestionSet, Utterance, utcnow,
+    SuggestionSet, Utterance, new_id, utcnow,
 )
-from app.embeddings import embed
+from app.embeddings import embed_query
 from app.guard.enforce import apply_guard, blocked_topics, tag_topics_safety_net
 from app.llm import complete_json
 from app.memory import retrieval
@@ -144,7 +144,7 @@ async def retrieve(state: PipelineState, qvec: list[float] | None) -> None:
     utt = state.utterance
     state.context = await retrieval.get_context(
         utt.user_id, state.person.id if state.person else None, utt.text,
-        session_id=utt.session_id, qvec=qvec, person=state.person)
+        session_id=utt.session_id, qvec=qvec, person=state.person, skip_embed=True)
     state.timings_ms["retrieve"] = _ms(t)
 
 
@@ -202,7 +202,7 @@ async def publish(state: PipelineState, stage: str, *, instant_cands: list[Candi
             if len(allowed) >= TARGET:
                 break
             if c.text.lower() not in have:
-                allowed.append(c.model_copy(update={"id": Candidate().id}))
+                allowed.append(c.model_copy(update={"id": new_id("cand")}))
                 have.add(c.text.lower())
     s = SuggestionSet(session_id=utt.session_id, user_id=utt.user_id, utterance_id=utt.id,
                       person_id=state.person.id if state.person else None, stage=stage,
@@ -264,9 +264,9 @@ def build_prompt(state: PipelineState, avoid: list[str]) -> str:
 # ───────────────────────── helpers ─────────────────────────
 async def _embed_query(text: str) -> list[float] | None:
     try:
-        return (await embed([text], "query"))[0]
-    except Exception:  # noqa: BLE001  no embeddings → skip vector stages, keep going
-        log.exception("query embedding failed")
+        return await embed_query(text)
+    except Exception as e:  # noqa: BLE001  no embeddings → skip vector stages, keep going
+        log.warning("query embedding unavailable (%s); vector stages skipped", str(e)[:160])
         return None
 
 

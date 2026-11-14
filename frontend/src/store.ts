@@ -102,6 +102,9 @@ export const useStore = create<State>((set, get) => {
   };
 
   const acceptSet = (incoming: SuggestionSet) => {
+    // a late set for the previous partner must never show under the current partner's header
+    const pid = get().personId;
+    if (incoming.person_id && pid && incoming.person_id !== pid) return;
     const cur = get().suggestions;
     // final replaces instant; never let an older/instant set overwrite a newer final one
     if (cur && cur._id === incoming._id && cur.stage === "final" && incoming.stage === "instant") return;

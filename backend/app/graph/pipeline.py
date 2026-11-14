@@ -3,8 +3,8 @@
 STABLE SIGNATURE (Lane B calls this):
     async def on_partner_utterance(utt: Utterance) -> None
 
-Stages: identify_context → instant_suggest → retrieve → generate → guard (→ regenerate ≤1)
-→ publish. Each stage is a plain async node over `PipelineState`, so the same nodes can be
+Stages: instant_suggest (Atlas only, ~1 round trip) → retrieve → generate → guard
+(→ regenerate ≤1) → publish. Each stage is a plain async node over `PipelineState`, so the same nodes can be
 wired into a LangGraph StateGraph later without changing their logic.
 
 # DECISION: the hot path runs the nodes directly (no checkpointer round-trips) to stay under
@@ -21,9 +21,10 @@ from app import db
 from app.config import settings
 from app.contracts import (
     Candidate, CandidateSource, GeneratedCandidates, PersonOut, PipelineState, RetrievedContext,
-    SuggestionSet, Utterance, utcnow,
+    SuggestionSet, Utterance, new_id, utcnow,
 )
-from app.embeddings import embed
+from app.embeddings import embed_query
+from app.graph import instant
 from app.guard.enforce import apply_guard, blocked_topics, tag_topics_safety_net
 from app.llm import complete_json
 from app.memory import retrieval
@@ -34,22 +35,16 @@ log = logging.getLogger(__name__)
 TARGET = 4
 MIN_SURVIVORS = 3
 
-# Last-resort fillers: neutral, never sensitive, still guarded.
-_FILLERS = [
-    "Sorry, could you say that again?",
-    "Ha, fair enough.",
-    "Give me a sec to type.",
-    "Thanks, that's kind of you.",
-    "Tell me more.",
-]
+# Last-resort fillers for the final stage: neutral, never sensitive, still guarded.
+_FILLERS = [text for text, _topics, _cue in instant.NEUTRAL]
 
+# Canonical persona: docs/01-product.md (Maya Chen, 58; Sam is her grandson, 16, hockey, "bud").
 PERSONA = (
-    "You write reply suggestions for Maya Chen, 41, who has ALS and speaks through a tablet. "
-    "Her voice: concise, warm, dry humour, never gushing. She calls her son Sam 'bud'. "
-    "She is a Toronto local. Every suggestion is something Maya would say out loud, in first "
-    "person, 3 to 14 words. Never narrate, never use emojis, never invent facts that are not in "
-    "the context. Ground replies in the provided memories when relevant and cite their ids in "
-    "memory_ids."
+    "You write reply suggestions for Maya Chen, 58, from Toronto, who has ALS and speaks through "
+    "a tablet. Her voice: concise, warm, dry humour, never gushing. She calls her grandson Sam "
+    "'bud'. Every suggestion is something Maya would say out loud, in first person, 3 to 14 "
+    "words. Never narrate, never use emojis, never invent facts that are not in the context. "
+    "Ground replies in the provided memories when relevant and cite their ids in memory_ids."
 )
 
 
@@ -64,18 +59,21 @@ async def on_partner_utterance(utt: Utterance) -> None:
 
 
 async def run(utt: Utterance) -> SuggestionSet | None:
+    """Instant stage first (Atlas-only, no embeddings, no LLM), then the final stage.
+
+    The query embedding starts immediately in the background but nothing in the instant stage
+    waits for it, so a slow or rate-limited Voyage can only affect the final stage."""
     t0 = time.perf_counter()
     state = PipelineState(utterance=utt)
+    qvec_task = asyncio.create_task(_embed_query(utt.text))
     await hub.emit("utterance.created", utt.session_id, utt)
 
-    qvec_task = asyncio.create_task(_embed_query(utt.text))
-    await identify_context(state)
-    qvec = await qvec_task
-    state.timings_ms["embed"] = _ms(t0)
-
-    instant = await instant_suggest(state, qvec)
+    instant_set = await instant_suggest(state, t0)
+    await announce_unknown_speaker(state)
 
     try:
+        qvec = await qvec_task
+        state.timings_ms["embed"] = _ms(t0)
         await retrieve(state, qvec)
         await generate(state)
         await guard(state)
@@ -87,56 +85,61 @@ async def run(utt: Utterance) -> SuggestionSet | None:
         log.exception("final stage failed for %s", utt.id)
         await hub.emit("error", utt.session_id, {"message": f"suggestions degraded: {str(e)[:200]}",
                                                  "where": "generate"})
-        if instant is not None:
-            return instant
-        state.generated, state.allowed, state.blocked = [], [], []
+        if instant_set is not None:
+            return instant_set
+        state.generated, state.allowed = [], []
         await guard(state)
     state.timings_ms["total"] = _ms(t0)
-    return await publish(state, "final", instant_cands=instant.candidates if instant else [])
+    state.timings_ms["final"] = state.timings_ms["total"]
+    return await publish(state, "final", instant_cands=instant_set.candidates if instant_set else [])
 
 
 # ───────────────────────── nodes ─────────────────────────
-async def identify_context(state: PipelineState) -> None:
+async def instant_suggest(state: PipelineState, t0: float) -> SuggestionSet | None:
+    """Stage 1: person + active rules + saved phrases in ONE parallel Atlas round trip →
+    rank (lexical + usage) → neutral top-up → deterministic guard → publish stage=instant.
+    Also fills state.person for the final stage. Never raises."""
     utt = state.utterance
     t = time.perf_counter()
+    pid = utt.speaker.person_id
+    try:
+        person, bnds, phrases = await asyncio.gather(
+            retrieval.load_person(pid), retrieval.active_boundaries(utt.user_id),
+            retrieval.saved_phrases(utt.user_id, pid))
+        state.person = person
+        state.timings_ms["instant_db"] = _ms(t)
+        cands = instant.rank_quick_replies(utt.text, phrases, person.id if person else None)
+        allowed, blocked = apply_guard(cands, person, bnds)
+        first_ms = _ms(t0)
+        state.timings_ms["first_suggestion"] = first_ms
+        s = SuggestionSet(
+            session_id=utt.session_id, user_id=utt.user_id, utterance_id=utt.id,
+            person_id=person.id if person else None, stage="instant",
+            candidates=allowed[:TARGET], blocked=blocked,
+            latency_ms={"first_suggestion": first_ms, "instant_db": state.timings_ms["instant_db"],
+                        "since_utterance": _since(utt)})
+        # DECISION: push to the tablet before persisting, saving one Atlas round trip on the
+        # critical path. The doc is written immediately after; a human tap takes far longer.
+        await hub.emit("suggestions.ready", s.session_id, s)
+        await _save(s)
+        log.info("instant %s first_suggestion_ms=%d db_ms=%d phrases=%d allowed=%d blocked=%d",
+                 s.id, first_ms, state.timings_ms["instant_db"], len(phrases), len(s.candidates),
+                 len(blocked))
+        return s
+    except Exception:  # noqa: BLE001  instant stage is best-effort; final stage still runs
+        log.exception("instant stage failed")
+        if state.person is None and pid:
+            state.person = await retrieval.load_person(pid)
+        return None
+
+
+async def announce_unknown_speaker(state: PipelineState) -> None:
+    utt = state.utterance
     method = utt.speaker.method if isinstance(utt.speaker.method, str) else utt.speaker.method.value
-    if utt.speaker.person_id:
-        state.person = await retrieval.load_person(utt.speaker.person_id)
     if state.person is None and method == "unknown":
         people = await retrieval.list_people(utt.user_id)
         await hub.emit("speaker.unknown", utt.session_id, {
             "utterance_id": utt.id, "candidates": [p.model_dump(mode="json") for p in people]})
-    state.timings_ms["identify"] = _ms(t)
-
-
-async def instant_suggest(state: PipelineState, qvec: list[float] | None) -> SuggestionSet | None:
-    """Top phrasebook phrases (vector-ranked) → guard → publish stage=instant. Skip if none."""
-    if qvec is None:
-        return None
-    t = time.perf_counter()
-    try:
-        utt = state.utterance
-        pid = state.person.id if state.person else None
-        phrases, bnds = await asyncio.gather(
-            retrieval.phrase_candidates(utt.user_id, pid, qvec, limit=6),
-            retrieval.active_boundaries(utt.user_id),
-        )
-        if not phrases:
-            return None
-        cands = [Candidate(text=m.text, topics=list(m.topics), source=CandidateSource.phrasebook,
-                           memory_ids=[m.id]) for m in phrases]
-        allowed, blocked = apply_guard(cands, state.person, bnds)
-        if not allowed:
-            return None
-        state.timings_ms["instant"] = _ms(t)
-        s = SuggestionSet(session_id=utt.session_id, user_id=utt.user_id, utterance_id=utt.id,
-                          person_id=pid, stage="instant", candidates=allowed, blocked=blocked,
-                          latency_ms={"instant": state.timings_ms["instant"]})
-        await _save_and_emit(s)
-        return s
-    except Exception:  # noqa: BLE001  instant stage is best-effort
-        log.exception("instant stage failed")
-        return None
 
 
 async def retrieve(state: PipelineState, qvec: list[float] | None) -> None:
@@ -144,7 +147,7 @@ async def retrieve(state: PipelineState, qvec: list[float] | None) -> None:
     utt = state.utterance
     state.context = await retrieval.get_context(
         utt.user_id, state.person.id if state.person else None, utt.text,
-        session_id=utt.session_id, qvec=qvec, person=state.person)
+        session_id=utt.session_id, qvec=qvec, person=state.person, skip_embed=True)
     state.timings_ms["retrieve"] = _ms(t)
 
 
@@ -202,15 +205,16 @@ async def publish(state: PipelineState, stage: str, *, instant_cands: list[Candi
             if len(allowed) >= TARGET:
                 break
             if c.text.lower() not in have:
-                allowed.append(c.model_copy(update={"id": Candidate().id}))
+                allowed.append(c.model_copy(update={"id": new_id("cand")}))
                 have.add(c.text.lower())
     s = SuggestionSet(session_id=utt.session_id, user_id=utt.user_id, utterance_id=utt.id,
                       person_id=state.person.id if state.person else None, stage=stage,
                       candidates=allowed[:TARGET], blocked=state.blocked,
-                      latency_ms=dict(state.timings_ms))
+                      latency_ms={**state.timings_ms, "since_utterance": _since(utt)})
     await _save_and_emit(s)
     await db.db()[db.UTTERANCES].update_one({"_id": utt.id}, {"$set": {"suggestion_set_id": s.id}})
-    log.info("published %s stage=%s allowed=%d blocked=%d latency=%s", s.id, stage,
+    log.info("published %s stage=%s first_suggestion_ms=%s final_ms=%s allowed=%d blocked=%d latency=%s",
+             s.id, stage, s.latency_ms.get("first_suggestion"), s.latency_ms.get("final"),
              len(s.candidates), len(s.blocked), s.latency_ms)
     return s
 
@@ -264,16 +268,25 @@ def build_prompt(state: PipelineState, avoid: list[str]) -> str:
 # ───────────────────────── helpers ─────────────────────────
 async def _embed_query(text: str) -> list[float] | None:
     try:
-        return (await embed([text], "query"))[0]
-    except Exception:  # noqa: BLE001  no embeddings → skip vector stages, keep going
-        log.exception("query embedding failed")
+        return await embed_query(text)
+    except Exception as e:  # noqa: BLE001  no embeddings → skip vector stages, keep going
+        log.warning("query embedding unavailable (%s); vector stages skipped", str(e)[:160])
         return None
 
 
-async def _save_and_emit(s: SuggestionSet) -> None:
+async def _save(s: SuggestionSet) -> None:
     s.updated_at = utcnow()
     await db.db()[db.SUGGESTION_SETS].replace_one({"_id": s.id}, s.to_mongo(), upsert=True)
+
+
+async def _save_and_emit(s: SuggestionSet) -> None:
+    await _save(s)
     await hub.emit("suggestions.ready", s.session_id, s)
+
+
+def _since(utt: Utterance) -> int:
+    """ms from utterance creation (includes the HTTP insert before the pipeline started)."""
+    return max(0, int((utcnow() - utt.created_at).total_seconds() * 1000))
 
 
 def _context_memory_ids(ctx: RetrievedContext) -> set[str]:

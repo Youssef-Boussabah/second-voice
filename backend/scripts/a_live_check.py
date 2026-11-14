@@ -64,8 +64,22 @@ async def step_inference() -> None:
     ms = int((time.perf_counter() - t) * 1000)
     for c in out.candidates:
         print(f"   - {c.text}  {c.topics}")
-    print(f"  {ms} ms, json_mode={llm._json_mode_ok}")
+    print(f"  {ms} ms, model={llm._nebius_resolved.get(settings.nebius_model)}, json_mode={llm._json_mode_ok}")
     check(len(out.candidates) >= 4, "schema-valid with >= 4 candidates")
+    check(ms < 5000, f"suggestion model fast enough for the hot path ({ms} ms)")
+
+    print("\n[2b] Summary model (Lane D's EpisodeSummary path)")
+    from app.contracts import EpisodeSummary
+    t = time.perf_counter()
+    summ = await llm.complete_json(
+        "Summarize this conversation for Maya's memory. Use the fixed topic taxonomy.",
+        "Dana: Hi Maya, here for your refill?\nMaya: Yes please, same as October.\n"
+        "Dana: I'll check if blister packs are in by Friday.", EpisodeSummary,
+        model=settings.summary_model)
+    ms = int((time.perf_counter() - t) * 1000)
+    print(f"  {ms} ms, model={llm._nebius_resolved.get(settings.nebius_summary_model)}: {summ.summary[:140]!r} "
+          f"topics={summ.topics} threads={[th.text for th in summ.open_threads_new]}")
+    check(bool(summ.summary.strip()), "EpisodeSummary schema-valid")
 
 
 async def step_embed_and_seed() -> None:

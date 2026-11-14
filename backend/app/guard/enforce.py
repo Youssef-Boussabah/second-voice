@@ -133,8 +133,8 @@ def apply_guard(
     allowed: list[Candidate] = []
     blocked: list[Candidate] = []
     for c in cands:
-        topics = tag_topics_safety_net(c.text, list(c.topics))
-        tv = {_topic_value(t) for t in topics}
+        topics = [_topic_value(t) for t in tag_topics_safety_net(c.text, list(c.topics))]
+        tv = set(topics)
         hit = next((r for r in rules if tv & {_topic_value(t) for t in r.topics}), None)
         if hit is not None:
             blocked.append(c.model_copy(update={"topics": topics, "blocked": True, "blocked_by": hit.id}))

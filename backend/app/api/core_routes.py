@@ -190,10 +190,10 @@ async def text_utterance(body: TextUtteranceIn):
     utt = Utterance(session_id=session.id, user_id=session.user_id, speaker=speaker, text=text,
                     source=UtteranceSource.text)
     await db.db()[db.UTTERANCES].insert_one(utt.to_mongo())
+    spawn_pipeline(utt)   # start the instant stage before any non-critical write
     if speaker.person_id and speaker.person_id not in session.person_ids:
         await db.db()[db.SESSIONS].update_one({"_id": session.id},
                                               {"$addToSet": {"person_ids": speaker.person_id}})
-    spawn_pipeline(utt)
     ms = int((time.perf_counter() - t) * 1000)
     log.info("text utterance %s person=%s %dms", utt.id, speaker.person_id, ms)
     return UtteranceOut(utterance=utt, latency_ms={"insert": ms})

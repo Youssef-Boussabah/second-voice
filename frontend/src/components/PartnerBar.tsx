@@ -26,7 +26,7 @@ export function PartnerPicker({ compact = false }: { compact?: boolean }) {
   const pick = (id: string) => (unknown ? void assign(id) : void choose(id));
 
   return (
-    <div role="radiogroup" aria-label="Who are you talking to?" className="flex flex-wrap gap-3">
+    <div role="radiogroup" aria-label="Who are you talking to?" className={`flex flex-wrap ${compact ? "gap-2" : "gap-3"}`}>
       {people.map((p) => {
         const on = p.id === personId;
         return (
@@ -36,11 +36,12 @@ export function PartnerPicker({ compact = false }: { compact?: boolean }) {
             role="radio"
             aria-checked={on}
             onClick={() => pick(p.id)}
-            className={`flex min-h-16 items-center gap-3 rounded-2xl border-2 px-4 text-left transition-colors ${
+            className={`flex min-h-16 items-center gap-3 rounded-2xl border-2 ${compact ? "px-3" : "px-4"} text-left transition-colors ${
               on ? "border-clay bg-clay text-white" : "border-line bg-white hover:border-clay"
             } ${compact ? "py-1" : "py-2"}`}
+            aria-label={`${p.name}, ${relLabel(p)}`}
           >
-            <span aria-hidden className={`grid h-11 w-11 place-items-center rounded-full text-lg font-bold ${on ? "bg-white/25" : "bg-clay-soft text-clay-dark"}`}>
+            <span aria-hidden className={`${compact ? "hidden" : "grid"} h-11 w-11 place-items-center rounded-full text-lg font-bold ${on ? "bg-white/25" : "bg-clay-soft text-clay-dark"}`}>
               {initials(p.name)}
             </span>
             <span>
@@ -65,7 +66,7 @@ export function ContextHeader() {
   const threads = (ctx?.open_threads ?? []).filter((t) => t.status === "open");
   return (
     <section aria-label="Conversation partner" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <h1 className="text-3xl font-bold">
+      <h1 className="text-2xl font-bold lg:text-3xl">
         {person.name} <span className="font-normal text-muted">· {relLabel(person)}{last ? ` · ${last}` : ""}</span>
       </h1>
       {threads.map((t) => (

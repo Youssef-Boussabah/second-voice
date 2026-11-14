@@ -27,7 +27,7 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
 
   return (
     <div
-      className={`relative flex min-h-40 flex-col rounded-3xl border-4 bg-white shadow-sm transition-colors ${
+      className={`flex min-h-36 flex-col rounded-3xl border-4 bg-white shadow-sm transition-colors ${
         speaking ? "animate-speak border-sage" : chosenId === c.id ? "border-sage/60" : "border-line hover:border-clay"
       } ${otherSpeaking ? "opacity-50" : ""}`}
     >
@@ -46,18 +46,16 @@ function SuggestionCard({ c, index, onMore, onEdit }: { c: Candidate; index: num
         }}
         aria-label={`Say: ${c.text}`}
         aria-describedby={`cand-hint-${c.id}`}
-        className="flex flex-1 select-none items-center rounded-3xl p-5 pr-24 text-left text-[28px] font-bold leading-snug"
+        className="flex flex-1 select-none items-start rounded-t-3xl px-5 pb-2 pt-4 text-left text-[28px] font-bold leading-tight"
       >
-        <span aria-hidden className="mr-3 self-start text-lg font-bold text-muted">{index + 1}</span>
+        <span aria-hidden className="mr-3 mt-1 text-lg font-bold text-muted">{index + 1}</span>
         <span>{c.text}</span>
       </button>
       <span id={`cand-hint-${c.id}`} className="sr-only">
         Tap to speak. Long-press or use More to reject.
       </span>
-      {speaking && (
-        <span role="status" className="absolute bottom-3 left-5 text-base font-bold text-sage">🔊 Speaking…</span>
-      )}
-      <div className="absolute right-2 top-2 flex flex-col gap-2">
+      <div className="flex items-center gap-2 px-3 pb-2">
+        <span role="status" className="flex-1 pl-2 text-base font-bold text-sage">{speaking ? "🔊 Speaking…" : ""}</span>
         <button type="button" onClick={onEdit} disabled={!!speakingId} aria-label={`Edit before speaking: ${c.text}`}
           className="grid h-16 w-16 place-items-center rounded-2xl text-2xl hover:bg-clay-soft">
           <span aria-hidden>✏️</span>
@@ -123,8 +121,9 @@ function HiddenNotice() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
+        aria-label={`${blocked.length} ${blocked.length === 1 ? "suggestion" : "suggestions"} hidden by your boundaries. Show which.`}
         className="min-h-16 self-start rounded-2xl bg-lock-soft px-5 text-xl font-bold text-lock hover:brightness-95">
-        🔒 {blocked.length} {blocked.length === 1 ? "suggestion" : "suggestions"} hidden by your boundaries
+        🔒 {blocked.length} hidden by your boundaries
       </button>
       {open && (
         <Sheet title="Hidden by your boundaries" onClose={() => setOpen(false)} labelledBy="hidden-title">
@@ -161,14 +160,14 @@ export default function Suggestions() {
   const cands = set_?.candidates.slice(0, 4) ?? [];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex min-h-8 items-center justify-between">
+    <div className="flex flex-col gap-3">
+      <div className="flex min-h-7 items-center justify-between">
         <h2 className="text-lg font-bold text-muted">Tap a reply to say it</h2>
         {set_?.stage === "instant" && <span role="status" className="text-base text-muted">Refining…</span>}
       </div>
 
       {cands.length > 0 ? (
-        <div key={`${set_?._id}-${set_?.stage}`} className="grid animate-fadein grid-cols-1 gap-4 sm:grid-cols-2">
+        <div key={`${set_?._id}-${set_?.stage}`} className="grid animate-fadein grid-cols-2 gap-3">
           {cands.map((c, i) => (
             <SuggestionCard key={c.id} c={c} index={i} onMore={() => setRejecting(c)} onEdit={() => setEditing(c)} />
           ))}

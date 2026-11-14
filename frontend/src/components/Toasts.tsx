@@ -12,7 +12,7 @@ export default function Toasts() {
   const toasts = useStore((s) => s.toasts);
   const dismiss = useStore((s) => s.dismissToast);
   return (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-20 z-50 flex flex-col items-center gap-3 px-4">
+    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-2 z-50 flex flex-col items-center gap-3 px-4">
       {toasts.map((t) => (
         <div key={t.id} role="status" className={`pointer-events-auto flex w-full max-w-2xl animate-fadein items-start gap-3 rounded-2xl p-4 shadow-xl ${STYLE[t.tone]}`}>
           <span aria-hidden className="text-2xl">{ICON[t.tone]}</span>

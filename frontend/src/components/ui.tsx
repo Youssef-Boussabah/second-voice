@@ -15,7 +15,7 @@ export function Button({ tone = "secondary", className = "", children, ...rest }
     <button
       type="button"
       {...rest}
-      className={`min-h-16 rounded-2xl px-6 text-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${TONES[tone]} ${className}`}
+      className={`min-h-16 rounded-2xl px-6 text-xl font-bold transition-colors disabled:cursor-not-allowed disabled:border-line disabled:bg-line disabled:text-muted ${TONES[tone]} ${className}`}
     >
       {children}
     </button>

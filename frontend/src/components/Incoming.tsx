@@ -106,14 +106,21 @@ export function Transcript() {
   const turns = useStore((s) => s.turns);
   const people = useStore((s) => s.people);
   const last = turns.slice(-4);
+  const endRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    // scroll only the transcript's own scroll container, never the page
+    const li = endRef.current;
+    const box = li?.closest("[data-scrollbox]");
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [turns.length]);
   if (!last.length) return <p className="text-lg text-muted">No conversation yet.</p>;
   return (
     <ol aria-label="Recent conversation" aria-live="polite" className="flex flex-col gap-2">
-      {last.map((u) => {
+      {last.map((u, i) => {
         const mine = u.speaker.kind === "user";
         const who = mine ? "You" : people.find((p) => p.id === u.speaker.person_id)?.name.split(" ")[0] ?? "Them";
         return (
-          <li key={u._id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+          <li key={u._id} ref={i === last.length - 1 ? endRef : undefined} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-xl ${mine ? "bg-clay-soft text-ink" : "bg-white text-ink"} border-2 border-line`}>
               <span className="block text-sm font-bold uppercase tracking-wide text-muted">{who}</span>
               {u.text}

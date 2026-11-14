@@ -110,21 +110,26 @@ async def instant_suggest(state: PipelineState, t0: float) -> SuggestionSet | No
         state.timings_ms["instant_db"] = _ms(t)
         cands = instant.rank_quick_replies(utt.text, phrases, person.id if person else None)
         allowed, blocked = apply_guard(cands, person, bnds)
-        first_ms = _ms(t0)
-        state.timings_ms["first_suggestion"] = first_ms
         s = SuggestionSet(
             session_id=utt.session_id, user_id=utt.user_id, utterance_id=utt.id,
             person_id=person.id if person else None, stage="instant",
             candidates=allowed[:TARGET], blocked=blocked,
-            latency_ms={"first_suggestion": first_ms, "instant_db": state.timings_ms["instant_db"],
-                        "since_utterance": _since(utt)})
-        # DECISION: push to the tablet before persisting, saving one Atlas round trip on the
-        # critical path. The doc is written immediately after; a human tap takes far longer.
-        await hub.emit("suggestions.ready", s.session_id, s)
+            latency_ms={"instant_db": state.timings_ms["instant_db"]})
+        # Persist BEFORE emit: once a card is visible, POST /select must find its set (no 404
+        # race on an immediate tap). Costs one Atlas round trip (~100 ms) on the instant path.
+        tp = time.perf_counter()
         await _save(s)
-        log.info("instant %s first_suggestion_ms=%d db_ms=%d phrases=%d allowed=%d blocked=%d",
-                 s.id, first_ms, state.timings_ms["instant_db"], len(phrases), len(s.candidates),
-                 len(blocked))
+        persist_ms = _ms(tp)
+        first_ms = _ms(t0)
+        state.timings_ms["first_suggestion"] = first_ms
+        s.latency_ms.update({"persist": persist_ms, "first_suggestion": first_ms,
+                             "since_utterance": _since(utt)})
+        await hub.emit("suggestions.ready", s.session_id, s)
+        # record the final instant timings on the stored doc (off the critical path)
+        await db.db()[db.SUGGESTION_SETS].update_one({"_id": s.id}, {"$set": {"latency_ms": s.latency_ms}})
+        log.info("instant %s first_suggestion_ms=%d db_ms=%d persist_ms=%d phrases=%d allowed=%d "
+                 "blocked=%d", s.id, first_ms, state.timings_ms["instant_db"], persist_ms,
+                 len(phrases), len(s.candidates), len(blocked))
         return s
     except Exception:  # noqa: BLE001  instant stage is best-effort; final stage still runs
         log.exception("instant stage failed")

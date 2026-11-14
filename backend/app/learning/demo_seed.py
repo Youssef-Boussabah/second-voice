@@ -8,8 +8,8 @@ Ownership tags:
 Reset only ever touches the demo user (`settings.demo_user_id`) and never deletes a
 document carrying another lane's tag. It deletes:
   memories/boundaries   written_by="lane-d" (or legacy lane-d learned provenance), no seed_source
-  events                no seed_source                            (demo session events)
-  sessions              all of the demo user's sessions           (demo sessions)
+  events                no seed_source, created_at >= SEEDED_AT   (demo session events)
+  sessions              no seed_source, started_at >= SEEDED_AT   (demo sessions)
 then re-applies the seed, restoring each lane-d seed document to its JSON state while
 keeping any backfilled embedding.
 """
@@ -99,13 +99,20 @@ async def apply_seed(database, *, dry_run: bool) -> dict[str, dict[str, int]]:
 LEGACY_PHRASE_ORIGINS = ["selected", "edited", "typed", "suggestion_selected", "suggestion_edited", "reply_typed"]
 
 
+# DECISION: demo sessions/events are only those created after lane-d first seeded Atlas
+# (safe loader landed 2026-11-14 13:39:05 ET = 18:39:05Z). Agent A's pre-seed smoke docs
+# (18:04Z: ses_db48f0c8f7b7 / evt_3e07110f9d5b, plus an utterance + suggestion_set that reset
+# never touches) are older and therefore never deleted.
+SEEDED_AT = datetime(2026, 11, 14, 18, 39, 5, tzinfo=timezone.utc)
+
+
 def reset_filters(user_id: str) -> dict[str, dict[str, Any]]:
     owner = {"user_id": user_id, "seed_source": {"$exists": False}}
     return {
         MEMORIES: owner | {"$or": [LEARNED_TAG, {"kind": "phrase", "origin": {"$in": LEGACY_PHRASE_ORIGINS}}]},
         BOUNDARIES: owner | {"$or": [LEARNED_TAG, {"origin": "learned"}]},
-        EVENTS: {"user_id": user_id, "seed_source": {"$exists": False}},
-        SESSIONS: {"user_id": user_id, "seed_source": {"$exists": False}},
+        EVENTS: owner | {"created_at": {"$gte": SEEDED_AT}},
+        SESSIONS: owner | {"started_at": {"$gte": SEEDED_AT}},
     }
 
 

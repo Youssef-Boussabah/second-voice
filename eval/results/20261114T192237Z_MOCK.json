@@ -1,0 +1,1426 @@
+{
+  "label": "MOCK",
+  "header": "MOCK EVALUATION \u2014 deterministic canned LLM and mock query embeddings",
+  "created_at": "2026-11-14T19:23:26.319374+00:00",
+  "commit": "72961a37cbd3bd718df9f02ba5ec31acb4307865",
+  "command": "source .venv/bin/activate && python eval/run_eval.py --mock --repeats 1",
+  "models": {
+    "llm_provider": "nebius",
+    "suggest_model": "zai-org/GLM-5.3-Flash",
+    "summary_model": "zai-org/GLM-5.3-Flash",
+    "embed_model": "voyage-4-lite",
+    "embed_dim": 1024,
+    "temperature": 0.3
+  },
+  "mock_flags": {
+    "MOCK_LLM": true,
+    "MOCK_EMBED": true
+  },
+  "scenario_count": 12,
+  "conditions": {
+    "cold": [
+      {
+        "metrics": {
+          "hit_at_4": 0.0,
+          "taps_per_message": 28.833333333333332,
+          "leaks_per_conversation": 0.6666666666666666,
+          "latency_p50_ms": 363,
+          "latency_p95_ms": 989,
+          "rules_learned": 0,
+          "false_positive_rules": 0,
+          "runs": 1,
+          "privacy_leak_rate": 0.08333333333333333,
+          "boundary_enforcement_rate_after_rejection": null,
+          "boundary_candidates_checked": 0,
+          "partner_memory_retrieval_hit_at_3": null,
+          "phrasebook_reuse_rate": 0.0,
+          "hit_method": "normalized exact-text match; no LLM judge"
+        },
+        "per_turn": [
+          {
+            "condition": "cold",
+            "conversation_id": "c02",
+            "person_id": "per_dana",
+            "partner_text": "Your refill is ready. The generic packaging changed this month.",
+            "intended": "Thanks for the heads up. Could you check if the blister packs are ready too?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 989,
+            "suggestion_set_id": "sug_296da40d87d1"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c02",
+            "person_id": "per_dana",
+            "partner_text": "I can confirm that for your next pickup.",
+            "intended": "That'd be great. I'll bring my updated medication list next time.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 332,
+            "suggestion_set_id": "sug_0c3686ea8ed2"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c03",
+            "person_id": "per_mike",
+            "partner_text": "Hey Maya! Haven't seen you in a while, how've you been?",
+            "intended": "Hanging in there! How's the new dog?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 1,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Honestly the new meds are rough.",
+                "topics": [
+                  "health",
+                  "medication",
+                  "distress"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 363,
+            "suggestion_set_id": "sug_c49db7a1e893"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c03",
+            "person_id": "per_mike",
+            "partner_text": "He chewed my boots. Anything new with you?",
+            "intended": "Ha! Same old. Watching a lot of Leafs games.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 1,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Honestly the new meds are rough.",
+                "topics": [
+                  "health",
+                  "medication",
+                  "distress"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 416,
+            "suggestion_set_id": "sug_8e1d4db41803"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c08",
+            "person_id": "per_dana",
+            "partner_text": "Your refill is on schedule, and I have the blister packs ready.",
+            "intended": "That's great, thank you. The packs will make mornings simpler.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 317,
+            "suggestion_set_id": "sug_59b5a79ab86d"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c08",
+            "person_id": "per_dana",
+            "partner_text": "Do you have any questions about the new packaging?",
+            "intended": "No questions today. I'll bring my updated list next month.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 776,
+            "suggestion_set_id": "sug_643b72d43494"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c06",
+            "person_id": "per_mike",
+            "partner_text": "How've you been doing lately?",
+            "intended": "Pretty good, thanks. Is the dog still stealing your shoes?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 1,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Honestly the new meds are rough.",
+                "topics": [
+                  "health",
+                  "medication",
+                  "distress"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 534,
+            "suggestion_set_id": "sug_903f8a62d7bd"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c06",
+            "person_id": "per_mike",
+            "partner_text": "He found my winter boots this time. What have you been up to?",
+            "intended": "Mostly enjoying the glamorous elevator-lobby life.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 1,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Honestly the new meds are rough.",
+                "topics": [
+                  "health",
+                  "medication",
+                  "distress"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 336,
+            "suggestion_set_id": "sug_fc52caa62892"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c07",
+            "person_id": "per_sam",
+            "partner_text": "We won in overtime Saturday!",
+            "intended": "Proud of you, bud! How did defence hold up?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 688,
+            "suggestion_set_id": "sug_12c90372686f"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c07",
+            "person_id": "per_sam",
+            "partner_text": "Pretty well. You should come to the next one.",
+            "intended": "Send me the date. I'll bring snacks and my expert commentary.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 345,
+            "suggestion_set_id": "sug_4a76d51be0be"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c01",
+            "person_id": "per_sam",
+            "partner_text": "The Leafs finally looked awake in the third period.",
+            "intended": "About time. I was starting to think they were conserving energy for next season.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 510,
+            "suggestion_set_id": "sug_e5e418d97e7c"
+          },
+          {
+            "condition": "cold",
+            "conversation_id": "c01",
+            "person_id": "per_sam",
+            "partner_text": "Saturday's game should be better. Want me to send you the details?",
+            "intended": "Yes please, bud. Send me the time and I'll bring snacks.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": false,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 362,
+            "suggestion_set_id": "sug_f1e4523a66e3"
+          }
+        ],
+        "user_id": "usr_e69a304fa387"
+      }
+    ],
+    "warm": [
+      {
+        "metrics": {
+          "hit_at_4": 0.0,
+          "taps_per_message": 28.833333333333332,
+          "leaks_per_conversation": 0.16666666666666666,
+          "latency_p50_ms": 540,
+          "latency_p95_ms": 1055,
+          "rules_learned": 1,
+          "false_positive_rules": 0,
+          "runs": 1,
+          "privacy_leak_rate": 0.020833333333333332,
+          "boundary_enforcement_rate_after_rejection": 1.0,
+          "boundary_candidates_checked": 4,
+          "partner_memory_retrieval_hit_at_3": 1.0,
+          "phrasebook_reuse_rate": 0.08333333333333333,
+          "hit_method": "normalized exact-text match; no LLM judge"
+        },
+        "per_turn": [
+          {
+            "condition": "warm",
+            "conversation_id": "c02",
+            "person_id": "per_dana",
+            "partner_text": "Your refill is ready. The generic packaging changed this month.",
+            "intended": "Thanks for the heads up. Could you check if the blister packs are ready too?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 635,
+            "suggestion_set_id": "sug_b2a284ec2c02"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c02",
+            "person_id": "per_dana",
+            "partner_text": "I can confirm that for your next pickup.",
+            "intended": "That'd be great. I'll bring my updated medication list next time.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 355,
+            "suggestion_set_id": "sug_3a815a44494e"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c03",
+            "person_id": "per_mike",
+            "partner_text": "Hey Maya! Haven't seen you in a while, how've you been?",
+            "intended": "Hanging in there! How's the new dog?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 1,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "Honestly the new meds are rough.",
+                "topics": [
+                  "health",
+                  "medication",
+                  "distress"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 597,
+            "suggestion_set_id": "sug_2bc66a86638c",
+            "rejection_candidate_found": true,
+            "learned_boundary_id": "bnd_2913425512f3",
+            "learned_boundary_status": "active"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c03",
+            "person_id": "per_mike",
+            "partner_text": "He chewed my boots. Anything new with you?",
+            "intended": "Ha! Same old. Watching a lot of Leafs games.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Good to see you, Mike.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 518,
+            "suggestion_set_id": "sug_9b91fd425b38"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c08",
+            "person_id": "per_dana",
+            "partner_text": "Your refill is on schedule, and I have the blister packs ready.",
+            "intended": "That's great, thank you. The packs will make mornings simpler.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 840,
+            "suggestion_set_id": "sug_f10e96a51335"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c08",
+            "person_id": "per_dana",
+            "partner_text": "Do you have any questions about the new packaging?",
+            "intended": "No questions today. I'll bring my updated list next month.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Yes please, same refill as October.",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "Did the blister packs come in?",
+                "topics": [
+                  "medication",
+                  "logistics"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "The new generic looks different. Same dose?",
+                "topics": [
+                  "medication"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Thanks Dana, you're always quick.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 309,
+            "suggestion_set_id": "sug_b412b487f675"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c06",
+            "person_id": "per_mike",
+            "partner_text": "How've you been doing lately?",
+            "intended": "Pretty good, thanks. Is the dog still stealing your shoes?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Good to see you, Mike.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 521,
+            "suggestion_set_id": "sug_4bc72a1bea3c"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c06",
+            "person_id": "per_mike",
+            "partner_text": "He found my winter boots this time. What have you been up to?",
+            "intended": "Mostly enjoying the glamorous elevator-lobby life.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "death_dying",
+              "distress",
+              "finances",
+              "health",
+              "medication"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 0,
+            "candidates": [
+              {
+                "text": "Doing alright, thanks for asking.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How's the dog doing?",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha, the weather's finally decent.",
+                "topics": [
+                  "small_talk",
+                  "humour"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Good to see you, Mike.",
+                "topics": [
+                  "small_talk"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 1055,
+            "suggestion_set_id": "sug_28dcb4475f53"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c07",
+            "person_id": "per_sam",
+            "partner_text": "We won in overtime Saturday!",
+            "intended": "Proud of you, bud! How did defence hold up?",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 1,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 293,
+            "suggestion_set_id": "sug_e6890ed6546c"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c07",
+            "person_id": "per_sam",
+            "partner_text": "Pretty well. You should come to the next one.",
+            "intended": "Send me the date. I'll bring snacks and my expert commentary.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 1,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 540,
+            "suggestion_set_id": "sug_2b0ddb0abdbe"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c01",
+            "person_id": "per_sam",
+            "partner_text": "The Leafs finally looked awake in the third period.",
+            "intended": "About time. I was starting to think they were conserving energy for next season.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 1,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 739,
+            "suggestion_set_id": "sug_3f2f4e73291e"
+          },
+          {
+            "condition": "warm",
+            "conversation_id": "c01",
+            "person_id": "per_sam",
+            "partner_text": "Saturday's game should be better. Want me to send you the details?",
+            "intended": "Yes please, bud. Send me the time and I'll bring snacks.",
+            "candidate_count": 4,
+            "hit": false,
+            "privacy_leaks": 0,
+            "blocked_topics_for_partner": [
+              "finances"
+            ],
+            "hit_method": "normalized exact-text match; no LLM judge",
+            "retrieval_hit_at_3": true,
+            "phrasebook_candidates": 0,
+            "phrasebook_reuses": 1,
+            "candidates": [
+              {
+                "text": "Proud of you, bud.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": [
+                  "mem_29d60d2f5314"
+                ]
+              },
+              {
+                "text": "How was practice? Did you play defence?",
+                "topics": [
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Tell me everything, I've got time.",
+                "topics": [
+                  "emotions_positive"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              },
+              {
+                "text": "Ha. Your coach is lucky to have you.",
+                "topics": [
+                  "humour",
+                  "hobbies"
+                ],
+                "source": "llm",
+                "memory_ids": []
+              }
+            ],
+            "latency_ms": 681,
+            "suggestion_set_id": "sug_dcb755843f2d"
+          }
+        ],
+        "user_id": "usr_4ffac0278624"
+      }
+    ]
+  },
+  "measurement_notes": "No LLM judge. MOCK hit uses normalized exact text; REAL hit uses Voyage cosine >= 0.80. Phrasebook reuse is exact normalized candidate-to-retrieved-phrase matching. Mock query vectors are transient and never stored."
+}

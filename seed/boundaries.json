@@ -1,0 +1,4 @@
+[
+  {"_id":"bnd_seed_stranger_sensitive","user_id":"usr_maya","scope":{"type":"relationship","value":"stranger"},"topics":["health","medication","finances","family_conflict","romance","location_schedule","legal","distress","death_dying"],"action":"block","status":"active","origin":"seed","evidence":{},"validation":{"replayed":0,"conflicts":0,"conflict_event_ids":[],"passed":true,"narrowed_from":null},"created_at":"2026-09-01T12:00:00Z","activated_at":"2026-09-01T12:00:00Z"},
+  {"_id":"bnd_seed_service_sensitive","user_id":"usr_maya","scope":{"type":"relationship","value":"service"},"topics":["health","finances","family_conflict","romance","location_schedule","death_dying"],"action":"block","status":"active","origin":"seed","evidence":{},"validation":{"replayed":0,"conflicts":0,"conflict_event_ids":[],"passed":true,"narrowed_from":null},"created_at":"2026-09-01T12:00:00Z","activated_at":"2026-09-01T12:00:00Z"}
+]

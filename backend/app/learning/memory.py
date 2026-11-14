@@ -8,6 +8,7 @@ from app.db import MEMORIES, PEOPLE, db
 from app.learning.safe_embed import embed_document_or_none
 from app.learning.boundaries import get_active_boundaries
 from app.learning.demo_seed import LEARNED_TAG
+from app.guard.enforce import blocked_topics, tag_topics_safety_net
 
 
 async def save_episode(user_id: str, person_id: str, session_id: str, summary: EpisodeSummary,
@@ -50,18 +51,27 @@ async def retrieve_person_context(user_id: str, person_id: str, relationship: st
     memories = await database[MEMORIES].find({
         "user_id": user_id, "status": "active", "person_id": {"$in": [person_id, "global"]},
     }).sort("created_at", -1).to_list(length=200)
-    episodes = [Memory.model_validate(item) for item in memories if item.get("kind") == "episode" and item.get("person_id") == person_id]
+    active_rules = await get_active_boundaries(user_id, relationship, person_id)
+    # DECISION: the tablet header shows this context in front of the partner, so the same
+    # deterministic rule that blocks cards also hides memories on blocked topics (LLM topics plus
+    # the guard's keyword net). Live 2026-11-14: Mike's header kept a medication open thread
+    # after Maya taught "keep health & medication private with acquaintances".
+    blocked = set(blocked_topics(person_out, active_rules)) if person_out else set()
+
+    def visible(text: str, topics: list) -> bool:
+        return not blocked or not ({str(getattr(t, "value", t)) for t in tag_topics_safety_net(text, list(topics))} & blocked)
+
+    records = [Memory.model_validate(item) for item in memories]
+    records = [memory for memory in records if visible(memory.text, memory.topics)]
+    episodes = [memory for memory in records if memory.kind == "episode" and memory.person_id == person_id]
     # "Your usual phrases with them" is per partner only; global seed phrases are not theirs.
-    phrases = sorted(
-        (Memory.model_validate(item) for item in memories
-         if item.get("kind") == "phrase" and item.get("person_id") == person_id),
-        key=lambda memory: memory.uses, reverse=True,
-    )
-    facts = [Memory.model_validate(item) for item in memories if item.get("kind") == "fact"]
+    phrases = sorted((memory for memory in records if memory.kind == "phrase" and memory.person_id == person_id),
+                     key=lambda memory: memory.uses, reverse=True)
+    facts = [memory for memory in records if memory.kind == "fact"]
     open_threads: list[OpenThread] = []
     for episode in episodes:
-        open_threads.extend(thread for thread in episode.open_threads if thread.status == "open")
-    active_rules = await get_active_boundaries(user_id, relationship, person_id)
+        open_threads.extend(thread for thread in episode.open_threads
+                            if thread.status == "open" and visible(thread.text, []))
     return RetrievedContext(
         person=person_out, recent_episodes=episodes[:5], relevant_episodes=episodes[:5],
         open_threads=open_threads, phrases=phrases[:12], facts=facts[:12], boundaries=active_rules,

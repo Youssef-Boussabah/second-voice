@@ -45,12 +45,15 @@ def _encoder():
     if _model is None:
         import torch
         from speechbrain.inference.speaker import EncoderClassifier
+        from speechbrain.utils.fetching import LocalStrategy
 
         # DECISION: CPU only, one model and serialized inference for predictable RAM.
         model = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb",
             savedir=str(Path(__file__).resolve().parents[3] / ".models" / "ecapa"),
             run_opts={"device": "cpu"},
+            # Copy directly into the ignored workspace cache: no Windows symlink privilege.
+            local_strategy=LocalStrategy.COPY_SKIP_CACHE,
         )
         with torch.inference_mode():
             model.encode_batch(torch.zeros(1, 16000))

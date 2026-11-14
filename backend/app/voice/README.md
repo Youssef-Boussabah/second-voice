@@ -50,3 +50,9 @@ $env:PYTHONPATH='backend'
 Provider tests use HTTP substitutes; database tests use async substitutes. Live
 Atlas, ElevenLabs synthesis/transcription, consenting cloned voice playback and
 noisy-room speaker accuracy must be verified with real configured services.
+
+Local verification: SpeechBrain 1.1.2, CPU Torch 2.15.0 and torchaudio 2.11.1
+successfully loaded the public ECAPA model and produced a finite, normalized
+192-dimensional vector from synthetic audio via `voice_model_check.py`. Model
+files use `COPY_SKIP_CACHE` in the ignored `.models/ecapa` directory, avoiding
+Windows symlink privileges. This checks model operation, not recognition accuracy.

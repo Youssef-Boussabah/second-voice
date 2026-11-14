@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT / "eval"))
 
 
 def arguments() -> argparse.Namespace:
@@ -41,7 +42,8 @@ from app.contracts import (
 )
 from app.embeddings import embed
 from app.graph import pipeline
-from app.learning.boundaries import propose_and_validate
+from app.learning.boundaries import get_active_boundaries, propose_and_validate
+from leaks import blocked_topics_for, count_leaks, is_leak, load_privacy_truth
 from app.memory import retrieval
 
 FIXTURES = ROOT / "seed" / "conversations"
@@ -130,7 +132,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
             event["seed_source"] = "lane-d-eval"
             await database[db.EVENTS].insert_one(event)
 
-    learned_blocked_topics = {"health", "medication"}
+    privacy_truth = load_privacy_truth()
     latency: list[int] = []
     hits = leaks = shown = phrase_reuse = memory_hits = memory_eligible = false_positives = 0
     boundary_checked = boundary_blocked = 0
@@ -179,10 +181,10 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         shown += len(candidates)
         phrasebook_matches = sum(1 for candidate in candidates if norm(candidate.text) in phrasebook_texts)
         phrase_reuse += phrasebook_matches
-        leak_count = sum(
-            bool({enum_value(topic) for topic in candidate.topics} & learned_blocked_topics)
-            for candidate in candidates
-        )
+        relationship = RELATIONSHIPS[fixture_person_id]
+        partner_rules = await get_active_boundaries(user_id, relationship, person_id)
+        partner_blocked = blocked_topics_for(relationship, person_id, partner_rules, privacy_truth)
+        leak_count = count_leaks(candidates, partner_blocked)
         leaks += leak_count
         if settings.mock_embed:
             exact_hit = any(norm(candidate.text) == norm(scenario["intended"]) for candidate in candidates)
@@ -201,7 +203,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
             "condition": condition, "conversation_id": scenario["conversation_id"],
             "person_id": fixture_person_id, "partner_text": scenario["partner_text"],
             "intended": scenario["intended"], "candidate_count": len(candidates),
-            "hit": exact_hit, "privacy_leaks": leak_count,
+            "hit": exact_hit, "privacy_leaks": leak_count, "blocked_topics_for_partner": sorted(partner_blocked),
             "hit_method": hit_method,
             "retrieval_hit_at_3": memory_hit, "phrasebook_candidates": sum(
                 1 for candidate in candidates if enum_value(candidate.source) == "phrasebook"),
@@ -214,7 +216,7 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
         turn_rows.append(row)
 
         if condition == "warm" and fixture_person_id == "per_mike" and not rejection_learned:
-            rejected = next((candidate for candidate in candidates if {enum_value(topic) for topic in candidate.topics} & learned_blocked_topics), None)
+            rejected = next((candidate for candidate in candidates if is_leak(candidate, partner_blocked)), None)
             row["rejection_candidate_found"] = rejected is not None
             if rejected:
                 rejection = Event(
@@ -237,10 +239,9 @@ async def make_test_run(database, condition: str, run_number: int, scenarios: li
                 if after_reject is None:
                     raise RuntimeError("Lane A pipeline returned no post-rejection set")
                 boundary_checked += len(after_reject.candidates)
-                boundary_blocked += sum(
-                    bool({enum_value(topic) for topic in candidate.topics} & learned_blocked_topics)
-                    for candidate in after_reject.candidates
-                )
+                post_rules = await get_active_boundaries(user_id, relationship, person_id)
+                boundary_blocked += count_leaks(
+                    after_reject.candidates, blocked_topics_for(relationship, person_id, post_rules, privacy_truth))
 
     active_rules = await database[db.BOUNDARIES].count_documents({
         "user_id": user_id, "origin": "learned", "status": "active",
